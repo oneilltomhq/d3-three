@@ -34,6 +34,7 @@
 			import { linkCurve, fatLine, lineMaterial } from '/src/link.js';
 			import { frameCamera } from '/src/frame.js';
 			import { attachOrbit } from '/src/orbit.js';
+			import { hierarchyNodes } from '/src/nodes.js';
 
 			let renderer, scene, camera;
 
@@ -90,53 +91,12 @@
 
 				/* ---------------- marks: one Object3D per datum ---------------- */
 
-				const marks = [];
-
-				// colour: internal nodes #555 as in the notebook; leaves by their
-				// top-level package, so the ten cones read apart in 3D.
-				const packages = root.children.map( c => c.data.name );
-				const colour = d3.scaleOrdinal( packages, d3.schemeTableau10 );
-
-				const internalGeometry = new THREE.SphereGeometry( 0.6, 16, 12 );
-				const leafGeometry = new THREE.SphereGeometry( 0.45, 14, 10 );
-				const internalMaterial = new THREE.MeshStandardNodeMaterial( { color: 0x555555, roughness: 0.65, metalness: 0.0 } );
-				const leafMaterials = new Map();
-
-				const nodes = new THREE.Group();
-				nodes.name = 'nodes';
+				// node marks: one Mesh per descendant, internal #555 and leaves
+				// coloured by top-level package (src/nodes.js, shared with d3_tree).
+				const { group: nodes, marks: nodeMarks, ids } = hierarchyNodes( root, position );
 				scene.add( nodes );
 
-				const ids = new Map();
-				root.each( ( node, i ) => ids.set( node, 'n' + i ) );
-
-				for ( const node of root.descendants() ) {
-
-					const leaf = ! node.children;
-					let material = internalMaterial;
-
-					if ( leaf ) {
-
-						const pkg = node.depth === 0 ? packages[ 0 ] : node.ancestors().at( - 2 ).data.name;
-						if ( ! leafMaterials.has( pkg ) ) {
-
-							leafMaterials.set( pkg, new THREE.MeshStandardNodeMaterial( {
-								color: new THREE.Color( colour( pkg ) ), roughness: 0.65, metalness: 0.0
-							} ) );
-
-						}
-
-						material = leafMaterials.get( pkg );
-
-					}
-
-					const mesh = new THREE.Mesh( leaf ? leafGeometry : internalGeometry, material );
-					mesh.position.copy( position.get( node ) );
-					mesh.name = node.data.name;
-					nodes.add( mesh );
-
-					marks.push( { id: ids.get( node ), kind: 'node', object: mesh } );
-
-				}
+				const marks = [ ...nodeMarks ];
 
 				// links: one fat line per root.links(), a cubic bezier whose control
 				// points are offset along the depth axis (3D linkHorizontal).

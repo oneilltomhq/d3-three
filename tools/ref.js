@@ -22,8 +22,6 @@ import { createServer } from '../test/e2e/server.js';
 
 const GALLERY_DIR = path.resolve( process.env.GALLERY_DIR || path.join( os.homedir(), 'src/vendor/d3-gallery/notebooks' ) );
 
-const port = 1235;
-
 const target = process.argv[ 2 ];
 
 if ( ! target ) {
@@ -73,8 +71,11 @@ if ( ! cells.has( 'chart' ) ) {
 // classic script and leave every cell function as a global.
 const script = source.replace( /export\s+default\s+function\s+define/, 'function define' );
 
+// An ephemeral port: a static server for this repo may already be running on a
+// fixed one, and this tool must not collide with it.
 const server = createServer();
-server.listen( port );
+await new Promise( resolve => server.listen( 0, resolve ) );
+const port = server.address().port;
 
 const browser = await puppeteer.launch( {
 	headless: 'new',

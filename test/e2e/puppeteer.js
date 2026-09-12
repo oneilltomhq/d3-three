@@ -128,7 +128,10 @@ async function main() {
 		.filter( s => s.slice( - 5 ) === '.html' && s !== 'index.html' )
 		.map( s => s.slice( 0, s.length - 5 ) )
 		.filter( f => f.startsWith( 'd3_' ) )
-		.filter( f => isExactList ? exactList.includes( f ) : true );
+		// `d3_blank` is the rung 0 fixture that proves the gates fail honestly, not
+		// a ladder example: an unfiltered run skips it (rung 2 director ruling).
+		// `npm run e2e d3_blank` still runs it, because it is an exact name.
+		.filter( f => isExactList ? exactList.includes( f ) : f !== 'd3_blank' );
 
 	if ( isExactList ) {
 
