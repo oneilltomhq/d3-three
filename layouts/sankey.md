@@ -92,9 +92,12 @@ labels: 48 }` — 48 nodes + 68 links, straight off the d3-sankey result.
   = the source/target node ids, origin at the centre of the ribbon's top face
   at the Bézier's `t = 0.5` (mid x between the columns, `(y0 + y1)/2`),
   y = `0.15 + i·0.001`. `normal = [0, 1, 0]`.
-- Verified in the page (`window.__sankey`): every node box's world footprint
-  equals its notebook rect scaled (top faces at y = 0.3); every link mark
-  point is the link's own mid-point. Picking: all 116 eligible from both
+- Verified in the page (`window.__sankey`, matrix read-back): every node box's
+  world footprint equals its notebook rect scaled (max |Δ| 3.6e-15, top faces
+  at y = 0.3; the smallest node is 0.62 px tall); every link mark point is the
+  link's own mid-point exactly (max |Δ| 0; the thinnest link is 0.018 px wide,
+  drawn at the notebook's `max(1, width)`). 36 categories cycle through the 10
+  swatches, as in the notebook. Picking: all 116 eligible from both
   cameras; 106 (A) / 107 (B) visible — the rest have their mid-point under a
   node of the middle column or under a later ribbon (excluded by the gate's
   visibility pre-pass); 20/20 hit from both cameras, 0 misses.
