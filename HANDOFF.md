@@ -1,203 +1,114 @@
 # d33 — handoff
 
-Written 2026-09-12 from the d3-gallery session. Port a ladder of D3
-gallery examples to Three.js (WebGPURenderer), each graded against a
-headless render of the original notebook, and each leaving behind exactly
-the three files the three-rs ladder (`~/src/projects/three-rs`) needs to
-adopt it as a later rung. Sibling of three-rs: same rung/grader/director
-shape, different source and grader.
+Written 2026-09-12 from the d3-gallery session. Lift a ladder of D3
+gallery examples into real 3D in Three.js (WebGPURenderer), so that the
+data structures themselves become three-dimensional, and leave behind
+for each one exactly what the three-rs ladder (`~/src/projects/three-rs`)
+needs to adopt it as a later rung. Sibling of three-rs; opposite grader:
+three-rs matches references that already exist, d33 creates them.
 
-## What "port d3 to Three.js" means here
+## A. What done means
 
-D3 is two halves. The layout half (d3-hierarchy, d3-shape, d3-scale,
-d3-force, d3-chord, d3-sankey, d3-geo, d3-interpolate, d3-color) is pure
-math with no DOM and is kept as a JS dependency in stage 1. The DOM half
-(d3-selection, d3-transition, d3-zoom, d3-drag, d3-axis, d3-brush) is what
-the port replaces with Three.js objects, tweens, camera and raycasting.
-Stage 2, owned by three-rs, ports the layout half to Rust; d3's own tape
-test suites per module are the grader there and need no display.
+1. A ladder of gallery examples, each a Three.js WebGPU page shaped like
+   Three's `webgpu_*` examples (`examples/d3_<slug>.html`).
+2. Dendrograms first: cluster dendrogram, tidy tree, radial dendrogram,
+   phylogenetic tree; then force-directed graph, zoomable sunburst,
+   circle packing, treemap.
+3. Eight passing examples is done; the four dendrograms are the minimum.
+4. Each page becomes a three-rs rung later, so d33 creates the references
+   three-rs will match.
+5. The user eyeballs every finished example and says it earns its place;
+   no number replaces this. Director stops after each example and asks.
+
+## B. Truly 3D
+
+6. Layouts are lifted, not just rendered: cone trees, nodes on a sphere,
+   d3-force-3d, stacked partitions, and so on. Design each per example.
+7. Depth gate: the smallest axis extent of mark positions is at least a
+   quarter of the largest.
+8. No sprites, textures, canvas-2D or CSS renderers for marks or links;
+   labels are the only allowed billboards.
+9. Angle gate: rendered from two orthogonal cameras, neither screenshot
+   is degenerate (marks bounding box has non-trivial area in both).
+10. Picking gate: raycasting the pixel of node N hits the same node from
+    both cameras.
+
+## C. Faithful to the data
+
+11. One scene object per datum (nodes, links, cells).
+12. Node and link counts equal the d3 hierarchy's descendants and links.
+13. Both dumped to `marks/d3_<slug>.json` and compared, so nothing is
+    collapsed or baked.
+14. The 3D layout variant is written down per example in
+    `layouts/<slug>.md` so stage 2 ports it instead of d3's 2D one.
+15. A reference render of the original notebook is kept beside each
+    example (`ref/<slug>.png`) as the visual anchor, not as a grader.
+
+## D. Reproducible for three-rs
+
+16. Each example runs under a copy of Three's e2e harness with its
+    deterministic injection (facts below).
+17. Fixed camera per example; the screenshot is produced by the harness.
+18. Two consecutive runs produce identical screenshots.
+19. Each finished example leaves HTML, screenshot, marks JSON, and its
+    layout note.
+20. Those four are appended to `handoff/LADDER-FOR-THREE-RS.md` with the
+    d3 modules and 3D layout it needs, for the three-rs director.
+
+## E. Process
+
+21. Rung 0: harness copy runs, deterministic injection proven, a blank
+    page fails the depth gate honestly. Log in `handoff/rung0/`.
+22. Director = session model; one Opus worker per example; fan out only
+    inside an example, 2–3 workers, never more than 6.
+23. Sequential examples, so the shared primitives (camera, line, text,
+    tween, orbit) grow once in `src/`.
+24. Worker reports: gates passed, layout variant chosen, primitives
+    changed, gaps.
+25. Work in the existing `rung0/` worktree; never commit in `main/`.
 
 ## Sources
 
-- `~/src/vendor/d3-gallery` (fetched 2026-08-31): `index.json`, and
-  `notebooks/<section>/<slug>[.v2]/notebook.js` + `files/`. Prefer `.v2`.
-  README there explains cell shape and the Observable-only affordances.
-- `~/src/vendor/three.js` @ 3d010ef, WebGPURenderer, same commit three-rs
-  ports. `test/e2e/` is the screenshot harness.
-- `~/src/vendor/d3` for module docs and the tape tests (stage 2 grader).
+- `~/src/vendor/d3-gallery`: `index.json`; `notebooks/<section>/<slug>[.v2]/notebook.js`
+  + `files/`. Prefer `.v2`. README there explains cell shape and the
+  Observable-only affordances. The four dendrograms are
+  `hierarchies/cluster.v2`, `hierarchies/tree.v2`,
+  `hierarchies/radial-cluster.v2`, `hierarchies/tree-of-life`.
+- `~/src/vendor/three.js` @ 3d010ef (same commit three-rs ports).
+- d3's layout modules (d3-hierarchy, d3-shape, d3-scale, d3-force,
+  d3-force-3d) stay JS dependencies; the DOM half (selection,
+  transition, zoom, drag) is replaced by Three objects, tweens, orbit
+  camera and raycasting.
 
-## The grader
+## Facts about Three's harness (`~/src/vendor/three.js/test/e2e/`)
 
-Two renders per rung, same size, same deterministic injection, then
-Three's own `image.js` `compare()` on the pair.
-
-- Reference: the notebook run unmodified under `@observablehq/runtime`
-  in headless Chromium, with `width` pinned, `FileAttachment` mapped to
-  `files/`, and only the `chart` cell observed. Screenshot the SVG at its
-  own width×height, device scale 2, then `image.js` `scale()` ×½.
-  Rung 0 builds this once as `ref/render.js <slug>`; every rung reuses it.
-- Port: `examples/d3_<slug>.html`, a page in the shape of Three's
-  `webgpu_*` examples, rendered by Three's puppeteer harness pointed at
-  this repo's `examples/` (copy `puppeteer.js`/`deterministic-injection.js`
-  and change paths; `image.js` is copied byte-for-byte, its `compare()`
-  and tolerance untouched).
-- Deterministic injection as three-rs: `performance.now`/`Date.now` = 0,
-  seeded `Math.random`, RAF fires once, `window.TESTING = true`. Rung 0
-  adds one thing on top: `window.__advance(ms)` that steps the fake clock
-  and drains d3-timer and the port's tween loop, so transitions can be
-  graded at t = 0 and t = end.
-- Marks gate: both pages accept `?text=0`, which hides every label. Pass
-  = `compare()` on the label-free pair at the tolerance rung 0 measured.
-  Rung 0 measures it, does not guess it: rasterise the reference SVG with
-  Chromium and with resvg, diff those two; the ladder tolerance is 2× that
-  disagreement, written into `ref/TOLERANCE.md` with the two images.
-  If that comes out above pixelmatch 0.1 / 1% of pixels, the director
-  reads the diff image and decides whether the loosening is honest before
-  any rung starts.
-- Labels gate: both pages dump `marks/d3_<slug>.json`: every mark as
-  `{kind, x, y, ...}` in SVG user units (labels include text, anchor,
-  angle). The port's dump must equal the reference's after rounding to
-  1e-6. In stage 1 this is nearly free because both call d3's layout; it
-  exists so stage 2's Rust layout has a bit-level target and so a port
-  that "looks right" but dropped labels cannot pass.
-- Interactive rungs: screenshot at t=0; inject the scripted event named
-  in the ladder (a click on node N by mark id, or N simulation ticks);
-  `__advance(duration)`; screenshot again. Both screenshots must pass.
-- A rung is done when both gates pass and the director has looked at
-  actual/expected/diff for every screenshot in the rung.
-
-## Rules that keep the green honest
-
-- Rendering is Three.js only: no SVG, no canvas-2D overlay, no CSS2D/CSS3D
-  renderer, no DOM text. The whole picture comes out of the WebGPU canvas.
-- One pixel-space camera helper, `svgCamera(viewBox)`: orthographic,
-  1 unit = 1 SVG user unit, y down. Every rung uses it unmodified.
-- One line primitive, one arc/area primitive, one text primitive, chosen
-  at rung 1 and reused. Text is SDF/MSDF through a Three material (troika
-  or lib3's SDF text); the director records the choice in `DECISIONS.md`
-  because three-rs inherits it. Canvas-texture sprites are not allowed.
-- Nothing derived from a reference image may appear in the tree.
-- Layout comes from the d3 layout modules at their gallery versions; the
-  port must not reimplement `d3.tree`, `d3.cluster`, `d3.arc` etc. in
-  stage 1 (that is stage 2's job, with d3's tests as the gate).
-- Curves are the same curve: `d3.linkHorizontal`, `curveBundle` etc. are
-  sampled to polylines via d3-shape into a custom path context, not
-  re-derived. Sample density is one number in `DECISIONS.md`.
-- Failures on this stack are silent wrong output
-  (`~/src/projects/3os/glass/docs/FINDINGS.md`). Trust the diff image.
-
-## Rung 0 — calibrate
-
-1. `npm ci` here (three, d3, @observablehq/runtime, puppeteer, resvg).
-2. `ref/render.js hierarchies/cluster.v2` produces `ref/cluster.png`.
-3. Chromium-vs-resvg diff of that SVG → `ref/TOLERANCE.md`.
-4. Harness copy runs against an empty `examples/d3_smoke.html` (a blank
-   WebGPU canvas) and fails honestly against `ref/cluster.png`.
-5. `__advance` proven on the reference side with `animation/collapsible-tree`:
-   t=0 and t=end screenshots differ.
-Keep the run log in `handoff/rung0/`.
-
-## The ladder
-
-| # | example (gallery dir) | forces into the port | scripted event |
-|---|---|---|---|
-| 1 | hierarchies/cluster.v2 (Cluster dendrogram) | svgCamera, linkHorizontal→polyline, line primitive, circle marks, SDF text with anchor + paint-order halo | — |
-| 2 | hierarchies/tree.v2 (Tidy tree) | d3.tree; proves rung 1 primitives are reusable with no new API | — |
-| 3 | hierarchies/radial-cluster.v2 + radial-tree.v2 (Radial dendrogram / tidy tree) | linkRadial, rotated + flipped labels, polar layout | — |
-| 4 | hierarchies/tree-of-life (Phylogenetic tree) | branch lengths, arcs (d3.arc→polyline), per-branch colour, thousands of marks | — |
-| 5 | networks/hierarchical-edge-bundling.v2 | curveBundle, many long curves, per-line colour, hover state via raycast | hover node N |
-| 6 | animation/collapsible-tree | d3-transition replaced by the port's tween; click to collapse/expand | click node N, advance 250 ms |
-| 7 | animation/zoomable-sunburst | d3.partition, arc primitive with interpolated angles, arcVisible clipping | click arc N, advance 750 ms |
-| 8 | animation/zoomable-circle-packing | d3.pack, zoom by camera tween not by scaling marks | click circle N, advance 750 ms |
-| 9 | hierarchies/treemap.v2 → animation/zoomable-treemap | rects, label clipping, tiling; director picks one | click cell N, advance 750 ms |
-| 10 | networks/force-directed-graph.v2 | d3-force ticked by `__advance`, drag via raycast + pointer | 300 ticks |
-| 11 | hierarchies/nitaku__tangled-tree-visualization-ii (Tangled tree) | non-d3-hierarchy layout, bundled links, stacked levels | — |
-| 12 | networks/chord-diagram.v2 + sankey.v2 | d3-chord ribbons, d3-sankey links (area primitive) | — |
-| 13 | animation/world-tour | d3-geo + versor; the one rung that may go 3D: a real sphere with a PerspectiveCamera, graded at t=0 only | advance 1250 ms, graded on marks JSON not pixels |
-
-Rungs 1–4 are the dendrogram core and are the minimum acceptable
-deliverable. Order is a default, not a contract; the director reorders
-when a gap list says so. Stretch after 13: fun/voronoi-stippling,
-analysis/contours, analysis/hexbin.
-
-## Handoff to three-rs
-
-Each finished rung leaves `examples/d3_<slug>.html`,
-`screenshots/d3_<slug>.jpg` (the port's own screenshot, produced by the
-harness), and `marks/d3_<slug>.json`. Those three are what a three-rs
-rung consumes: the HTML is the scene to port, the JPG is the reference,
-the JSON is the layout target for the Rust d3 modules. Append each to
-`handoff/LADDER-FOR-THREE-RS.md` with the d3 modules it needs, so the
-three-rs director can schedule Rust ports of d3-hierarchy, d3-shape,
-d3-force in the order this ladder demands.
-
-## Orchestration
-
-- Director: the session model, holding this file and the judgement
-  calls (is the tolerance honest, is the green real, what is the next
-  rung, which text primitive).
-- Workers: Opus, one per rung. A worker gets: the notebook.js and files,
-  the current `examples/` and shared primitives, the harness, and "make
-  this rung pass both gates". It reports: pass/fail with diff %, marks
-  JSON equality, primitives it added or changed, and gaps found.
-- Sequential rungs; fan out only inside a rung on independent gaps,
-  2–3 workers, never more than 6 (machine limit in ~/.claude/CLAUDE.md).
-
-## Layout (suggested, walk it if it fights you)
-
-Plain git repo at `~/src/projects/d33` (bare-worktree layout as
-three-rs if the director wants parity). `examples/`, `src/` (svgCamera,
-primitives, tween, path context), `ref/`, `test/e2e/`, `marks/`,
-`screenshots/`, `handoff/`, `DECISIONS.md`.
-
-## Facts about Three's harness, measured 2026-09-12 (so rung 0 need not re-read it)
-
-`~/src/vendor/three.js/test/e2e/puppeteer.js`, 613 lines. What the copy
-in `test/e2e/` here must reproduce:
-
-- Chromium is launched via puppeteer (`~/.cache/puppeteer` already has
-  chrome + chrome-headless-shell; three.js `node_modules` is installed,
-  node v24.13.0). Flags: `--hide-scrollbars --enable-unsafe-webgpu
-  --enable-features=Vulkan --disable-vulkan-surface --ignore-gpu-blocklist
+- puppeteer launches Chromium from `~/.cache/puppeteer` (already
+  present; three.js `node_modules` installed; node v24). Flags:
+  `--hide-scrollbars --enable-unsafe-webgpu --enable-features=Vulkan
+  --disable-vulkan-surface --ignore-gpu-blocklist
   --disable-gpu-driver-bug-workarounds --disable-gpu-watchdog --no-sandbox`.
-- It sets `VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json`:
-  the e2e run uses lavapipe (software Vulkan), not the Intel GPU. Keep
-  that; it is what makes the screenshots reproducible. Confirm the file
-  exists on this machine in rung 0.
-- Viewport 400×250 at `deviceScaleFactor`-free `viewScale` 2 (i.e. the
-  page is 800×500), screenshot then `Image.scale(1/2)`. For d33 the page
-  size is the SVG's own width×height, still ×2 then ×½.
-- `image.js` `compare(other, diff, threshold=0.1)`: per-pixel squared RGB
-  distance normalised to [0,1], counted if > threshold². Pass when the
-  count is < 0.1% of pixels (`maxDifferentPixels`). Not pixelmatch; it is
-  Three's own. Copy the file byte for byte (deps: pngjs, jpeg-js).
-- Page flow: `goto` → evaluate `clean-page.js` (hides `#info`, lil-gui,
-  buttons) → wait network idle 2 s → set `window._renderStarted = true`
-  and wait for `_renderFinished` (the injected RAF fires the callback
-  once, then the page is screenshotted) with a 5 s render timeout.
-- `deterministic-injection.js` is injected with `evaluateOnNewDocument`.
-  It also intercepts requests for `build/three.webgpu.js` and serves a
-  patched copy (`Math.random() * 0xffffffff` → `Math._random()`, and
-  `trackTimestamp` forced false). The d33 pages import
-  `three/webgpu` from the vendored `build/`; keep the same patch.
-- Static server: `~/src/vendor/three.js/utils/server.js`, port 1234,
-  `createServer(root)`. Point it at this repo, and add a route or symlink
-  for `/three/build/*` to the vendored build and `/gallery/*` to
-  `~/src/vendor/d3-gallery/notebooks` so notebooks' `files/` load locally.
-- Output on failure: `output-screenshots/<name>-actual.jpg`,
-  `-expected.jpg`, `-diff.jpg` (red = differing pixels).
+- `VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json`: e2e
+  runs on lavapipe (software Vulkan), which is what makes screenshots
+  reproducible. Keep it. The file exists on this machine.
+- Viewport 400×250 at viewScale 2, screenshot then `image.js`
+  `scale(1/2)` (box filter). `compare()` = squared RGB distance > 0.1²
+  counts a pixel; pass < 0.1% of pixels. Copy `image.js` byte for byte
+  (deps pngjs, jpeg-js); rung 18 uses it to prove two runs identical.
+- `deterministic-injection.js`: `Math.random` = `sin(seed++)*10000`
+  frac, seed π/4; `performance.now`/`Date.now` = 0; RAF fires once after
+  `window._renderStarted`; `window.TESTING = true`. Injected via
+  `evaluateOnNewDocument`. Requests for `build/three.webgpu.js` are
+  answered with a patched copy (`Math.random() * 0xffffffff` →
+  `Math._random()`, `trackTimestamp` forced false).
+- Page flow: goto → `clean-page.js` (hides `#info`, lil-gui) → network
+  idle 2 s → `_renderStarted = true` → wait `_renderFinished` (5 s
+  timeout) → screenshot. Failures write `-actual/-expected/-diff.jpg`.
+- Static server `utils/server.js` port 1234; point a copy at this repo
+  and route `/three/build/*` to the vendored build and `/gallery/*` to
+  `~/src/vendor/d3-gallery/notebooks`.
 
-## State on 2026-09-12 20:45
+## State
 
-- `~/src/projects/d33` created in the bare-worktree layout; `main` holds
-  the handoff (that one bootstrap commit was made in `main/`; none after).
-- Worktree `rung0/` on branch `rung0` exists. Start there. Nothing else
-  has been written: no package.json, no harness copy, no reference
-  renderer. `resvg` is not installed; use `@resvg/resvg-js` from npm.
-
-## Out of scope
-
-Anything in d3's DOM half beyond what a rung's scripted event needs (no
-brush, no axes as a library); Observable Plot; the Rust side. The
-question "does it look good in 3D" is not graded; rung 13 is the only
-place 3D is even allowed to differ from the SVG.
+`~/src/projects/d33` bare-worktree layout (see CLAUDE.md). `main` has
+the bootstrap commit only. Worktree `rung0/` on branch `rung0`. Nothing
+else written: no package.json, no harness copy, no `src/`.
