@@ -4,7 +4,7 @@
 | --- | --- |
 | page | `examples/d3_sunburst.html` |
 | screenshot | `examples/screenshots/d3_sunburst.jpg` (400×250) |
-| marks | `marks/d3_sunburst.json` (0 nodes, 0 links, 251 cells) |
+| marks | `marks/d3_sunburst.json` (0 nodes, 0 links, 251 cells, 93 labels) |
 | layout note | `layouts/sunburst.md` |
 | reference render of the original notebook | `ref/sunburst.png` (928×938) |
 
@@ -39,21 +39,34 @@ camera. Colour: the notebook's rainbow by top-level package, mixed 40 % toward
 white and opaque (the notebook's `fill-opacity 0.6` on white, baked in).
 `expected = { nodes: 0, links: 0, cells: 251 }`.
 
+**Labels:** the notebook's subset, cells with `(y0+y1)/2·(x1−x0) > 10` in notebook
+units (93 of 251), via `src/labels.js` (lib3 sdf-text, Roboto). Each lies in the
+tangent plane of its outer face, centred on the mark point lifted 0.02 along the
+normal, baseline along the meridian (the notebook's radial text), the direction chosen
+so it projects rightward from camera A (the notebook's `rotate(x<180?0:180)`),
+`anchorX: center`, em 8 px at 250 px (0.694 units), fill #333, white outline 0.25.
+`expected.labels = 93`; the marks dump carries `labels` with position, quaternion and
+anchor. Eyeball render `handoff/ladder/sunburst-1600x1000.jpg`.
+
 **Camera:** PerspectiveCamera fov 40, elevation 35°, azimuth 150° (camera A over
 longitude 300°, camera B over 210°), fitted to the mark positions at 0.85 fill.
 Fixed; one frame.
 
 **Gates:** depth 0.804 · counts 0/0, 0/0, cells 251/251 · angle 0.488 / 0.489 ·
-picking 20/20 from both cameras (141 / 132 front-facing cells eligible).
+picking 20/20 from both cameras (141 / 132 front-facing cells eligible) · labels
+93/93. `e2e:twice` 0 px.
 
 **Harness change carried by this rung (`src/d33.js`):** the counts gate also
 compares `cell` marks against `expected.cells` (default 0); the angle and picking
-gates run on nodes *and* cells; a mark may carry `normal` and the picking gate
-samples up to 20 marks per camera from those whose normal is absent or faces that
-camera (`dot(normal, camera − mark) > 0`), reporting `sampledA/B` and
-`eligibleA/B`; zero eligible marks for either camera fails.
+gates run on nodes *and* cells; the picking gate reports `eligibleA/B` next to
+rung 3's `sampledA/B`; the labels gate compares against `expected.labels` when the
+page gives it (a cell layout labels only the cells the notebook labels), else
+against the node count as before. Also `tools/ref.js` (outside the two allowed
+exceptions, flagged): an svg sized only by `viewBox` gets `width: 928px` so the
+notebook's `autoBox` chart has a size to screenshot.
 
-**Gap:** no labels (rung 3 had not landed when this shipped; the note's Labels
-section says which cells get one and how they lie). The value-as-thickness is only
-visible from below or through the south-pole hole with the inward extrusion; the
-outward version shows it from anywhere but fails picking.
+**Gap:** the value-as-thickness is only visible from below or through the
+south-pole hole with the inward extrusion; the outward version shows it from anywhere
+but fails picking. Labels in the deepest band overrun it along the meridian, as the
+notebook's overrun their ring. `expected.cells: 0` will appear in other examples'
+marks JSON when they are regenerated under this `d33.js`.

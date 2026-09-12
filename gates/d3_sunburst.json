@@ -34,7 +34,7 @@
 			"pass": true
 		},
 		"picking": {
-			"sampled": 20,
+			"sampled": 38,
 			"sampledA": 20,
 			"sampledB": 20,
 			"eligibleA": 141,
@@ -43,6 +43,11 @@
 			"hitB": 20,
 			"pickables": 251,
 			"misses": [],
+			"pass": true
+		},
+		"labels": {
+			"count": 93,
+			"expectedNodes": 93,
 			"pass": true
 		},
 		"pass": true

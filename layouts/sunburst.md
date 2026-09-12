@@ -82,11 +82,34 @@ pixel, all must hit themselves):
   front-facing cells per camera).
 - no node or link marks. `expected = { nodes: 0, links: 0, cells: 251 }`.
 - `pickables`: the 251 cell meshes.
-- labels: not built (rung 3 had not landed on `rung0` when this shipped). Plan, for
-  when it does: as the notebook, only cells whose `(y0+y1)/2 · (x1−x0) > 10` in the
-  notebook's own units (radius 464), so the label set is the notebook's. Each label
-  lies tangent to the outer face at the mark point, baseline along longitude,
-  flipped so it reads left-to-right from camera A.
+- labels: see below.
+
+## Labels
+
+Built with `src/labels.js` (lib3 sdf-text, rung 3), not marks. The set is the
+notebook's: cells with `(y0+y1)/2 · (x1−x0) > 10` in the notebook's own units
+(partition size `[2π, 464]`), 93 of the 251. `hierarchyLabels` is handed a pseudo-root
+`{ descendants: () => subset }` over the real d3 nodes, ids `c<i>` from the marks.
+
+Placement is the notebook's radial, centred text (`rotate(x−90) translate(y,0)`,
+`text-anchor: middle`) on the sphere: each label lies in the tangent plane of the
+outer face, centred on the cell's mark point lifted `0.02` along the normal so it
+sits above the surface, **baseline along the meridian** (the sphere's radial
+direction, since a 2D radius became a meridian). The frame is `(south, west)` or its
+half-turn about the normal `(north, east)`, chosen so that the baseline projects
+rightward from camera A — the notebook's `rotate(x < 180 ? 0 : 180)`, decided by the
+camera instead of the angle. Both frames face outward and are rotations, so
+`labels.js`'s own mirror check (which assumes local +y projects upward) flips
+nothing (`flipped: 0`); the draft of this note said "baseline along longitude", which
+would have needed a west-up frame and mirrored the left half.
+
+Font Roboto Regular, em height 8 px at the harness's 250 px frame (`fontSize` =
+`8 / pxPerUnit` = 0.694 world units), fill `#333`, outline 0.25 white, anchorX
+`center` (set on each `Text` after `hierarchyLabels` returns, then one more
+`sync()`), anchorY middle, render order 1. `expected.labels = 93`; the marks dump
+carries `labels: [{ id, text, x, y, z, q, anchorX: 'center' }]`. Long names in the
+deepest band (`AspectRatioBanker`, `HierarchicalCluster`) overrun their band along the
+meridian exactly as the notebook's overrun its ring.
 
 ## Camera
 
@@ -98,7 +121,7 @@ packages. The draft's azimuth 20° put camera A at longitude 70°, in the middle
 `vis` (which spans 0°–163°), so the whole near side was one colour.
 
 Gates as shipped: depth 0.804 · counts 0/0, 0/0, cells 251/251 · angle 0.488 /
-0.489 · picking 20/20 from both cameras (141 / 132 cells front-facing).
+0.489 · picking 20/20 from both cameras (141 / 132 cells front-facing) · labels 93/93.
 
 ## Primitives for `src/`
 
@@ -106,11 +129,13 @@ Gates as shipped: depth 0.804 · counts 0/0, 0/0, cells 251/251 · angle 0.488 /
 → `{ geometry, centroid, normal }`, a closed BufferGeometry in local coordinates
 around `origin` (default: the sector's centre at mid-radius); every face has its
 own vertices, wound outward (checked: signed volume > 0 for all 251). Also exports
-`spherical(r, colat, lon)`. Nothing else new.
+`spherical(r, colat, lon)`. Labels use `src/labels.js` as is. Nothing else new.
 
 ## For three-rs
 
 d3 modules: d3-hierarchy (hierarchy, partition), d3-scale (scaleOrdinal),
 d3-interpolate/d3-scale-chromatic (interpolateRainbow, interpolateRgb, quantize).
 Layout: the band and thickness formulas above, ~20 lines on top of partition's
-`x0/x1/depth/value`; the shell-sector mesh is ~100 lines.
+`x0/x1/depth/value`; the shell-sector mesh is ~100 lines. Labels: 93 SDF-text
+strings, each a position, a quaternion (tangent frame, baseline along the meridian)
+and `anchorX: center`, all in `marks/d3_sunburst.json`.

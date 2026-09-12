@@ -21,7 +21,8 @@
 					"three/tsl": "/build/three.tsl.js",
 					"three/addons/": "/jsm/",
 					"d3": "/examples/jsm/vendor/d3.js",
-					"d33": "/src/d33.js"
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
 				}
 			}
 		</script>
@@ -34,8 +35,9 @@
 			import { frameCamera } from '/src/frame.js';
 			import { attachOrbit } from '/src/orbit.js';
 			import { shellSector, spherical } from '/src/shell.js';
+			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
 
-			let renderer, scene, camera;
+			let renderer, scene, camera, labels;
 
 			const R = 10;                              // radius of the sphere every cell's outer face lies on
 			const EXTRUDE = - 1;                       // -1: thickness grows inward from R; +1: outward (see layouts/sunburst.md)
@@ -44,6 +46,8 @@
 			const LON_PER_SEGMENT = 3 * Math.PI / 180; // tessellation: one segment per 3 degrees, even count
 			const LAT_SEGMENTS = 4;
 			const MARK_SINK = 1e-4;                    // mark point sits this far inside the outer face
+			const LABEL_PX = 8;                        // label em height at the harness's 250 px frame
+			const LABEL_LIFT = 0.02;                   // label plane sits this far above the outer face
 
 			await init();
 
@@ -106,6 +110,8 @@
 
 				const materials = new Map();
 				const marks = [];
+				const ids = new Map();       // node -> mark id (for labels)
+				const markPoint = new Map(); // node -> mark point
 
 				for ( const cell of cells ) {
 
@@ -140,6 +146,8 @@
 					mesh.name = cell.node.data.name;
 					group.add( mesh );
 
+					ids.set( cell.node, 'c' + marks.length );
+					markPoint.set( cell.node, centroid );
 					marks.push( { id: 'c' + marks.length, kind: 'cell', object: mesh, normal } );
 
 				}
@@ -173,6 +181,62 @@
 					elevation: 35, azimuth: 150, fill: 0.85, points
 				} );
 
+				/* ---------------- labels (src/labels.js) ----------------
+				   The notebook's subset: cells whose mid-radius arc length exceeds
+				   10 px in its own units ((y0+y1)/2 * (x1-x0) > 10 at radius 464).
+				   Each label lies tangent to the sphere just above the cell's outer
+				   face, centred on the mark point, baseline along the meridian
+				   (the notebook's radial text: rotate(x-90) translate(y,0)),
+				   centred as the notebook's text-anchor: middle. Mirror check
+				   from camera A flips it about the surface normal so it reads
+				   left-to-right; em height LABEL_PX at the frame's 250 px. Laid
+				   out (font awaited) before the animation loop exists. */
+
+				const labelled = root.descendants().filter( d => d.depth && ( d.y0 + d.y1 ) / 2 * ( d.x1 - d.x0 ) > 10 );
+
+				const labelPoint = new Map();
+				for ( const node of labelled ) labelPoint.set( node, markPoint.get( node ).clone().addScaledVector( markPoint.get( node ).clone().normalize(), MARK_SINK + LABEL_LIFT ) );
+
+				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+				const fontSize = LABEL_PX / pxPerUnit;
+
+				labels = await hierarchyLabels( { descendants: () => labelled }, ids, labelPoint, {
+					font: '/examples/fonts/Roboto-Regular.ttf',
+					fontSize,
+					color: 0x333333,
+					outlineWidth: 0.25, outlineColor: 0xffffff,
+					leafOffset: 0, internalOffset: 0,
+					orient: node => {
+
+						// tangent plane, +z the outward normal, +x along the meridian:
+						// (south, west) or its 180-degree turn about the normal
+						// (north, east), whichever makes +x project rightward from
+						// camera A. That is the notebook's rotate(x < 180 ? 0 : 180),
+						// decided by the camera instead of the angle; the frame is
+						// always a rotation, never a reflection, so labels.js's own
+						// mirror check (which assumes +y projects upward) finds
+						// nothing to flip.
+						const p = markPoint.get( node );
+						const colat = Math.acos( p.y / p.length() );
+						const lon = Math.atan2( p.z, p.x );
+						const south = new THREE.Vector3( Math.cos( colat ) * Math.cos( lon ), - Math.sin( colat ), Math.cos( colat ) * Math.sin( lon ) );
+						const west = new THREE.Vector3( Math.sin( lon ), 0, - Math.cos( lon ) );
+						const right = p.clone().add( south ).project( camera ).x;
+						const left = p.clone().sub( south ).project( camera ).x;
+						if ( right < left ) { south.negate(); west.negate(); }
+						return basisQuaternion( south, west );
+
+					},
+					camera,
+					billboard: false
+				} );
+
+				// text-anchor: middle, as the notebook; the mirror flip keeps the block on the mark
+				for ( const l of labels.labels ) { l.object.anchorX = 'center'; l.anchorX = 'center'; }
+				labels.batched.sync();
+
+				scene.add( labels.group );
+
 				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
 				renderer.setPixelRatio( window.devicePixelRatio );
 				renderer.setSize( window.innerWidth, window.innerHeight );
@@ -182,14 +246,16 @@
 				await renderer.init();
 
 				console.log( 'd33 backend:', renderer.backend.constructor.name,
-					'cells:', cells.length, 'height:', root.height, 'R:', R );
+					'cells:', cells.length, 'height:', root.height, 'R:', R,
+					'labels:', labels.count, 'flipped:', labels.flipped, 'fontSize:', fontSize.toFixed( 3 ), 'px:', ( fontSize * pxPerUnit ).toFixed( 2 ) );
 
 				attachOrbit( camera, renderer.domElement, target );
 
 				register( {
 					renderer, scene, camera, marks, target,
-					expected: { nodes: 0, links: 0, cells: root.descendants().filter( d => d.depth ).length },
-					pickables: group.children
+					expected: { nodes: 0, links: 0, cells: root.descendants().filter( d => d.depth ).length, labels: labelled.length },
+					pickables: group.children,
+					labels
 				} );
 
 			}
@@ -235,6 +301,7 @@
 
 			function animate() {
 
+				labels.update( camera ); // no-op unless billboard: true
 				renderer.render( scene, camera );
 
 			}
