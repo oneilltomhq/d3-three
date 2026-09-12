@@ -33,6 +33,8 @@
 		},
 		"picking": {
 			"sampled": 20,
+			"sampledA": 20,
+			"sampledB": 20,
 			"sampleSet": "pickables",
 			"candidates": 220,
 			"hitA": 5,
@@ -41,6 +43,11 @@
 			"occludedB": 17,
 			"pickables": 220,
 			"misses": [],
+			"pass": true
+		},
+		"labels": {
+			"count": 252,
+			"expectedNodes": 252,
 			"pass": true
 		},
 		"pass": true

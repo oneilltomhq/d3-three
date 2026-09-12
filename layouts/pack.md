@@ -95,12 +95,21 @@ packings of that many equal spheres in a sphere reach roughly 0.6. Time: `padded
   centre). Result: 20 sampled, hit 5 / 3, occluded 15 / 17, misses 0 — no sampled
   leaf is ever blocked by a container.
 - `expected = { nodes: 252, links: 0 }`.
-- labels (**gap**, rung 3 had not landed when this was built): leaves whose radius
-  is above a threshold chosen so the count matches the notebook's labelled set
-  (147) as closely as practical; label lies in the plane facing camera A's
-  *initial* direction (a fixed, not per-frame, orientation: the label's quaternion
-  is set once from the camera at layout time — NOT billboarding, baked; record the
-  quaternion here when added). Text `d.data.name`, white halo.
+- labels (rung 3, `src/labels.js` `hierarchyLabels`, lib3 sdf-text, one Text per
+  node in a BatchedText): the rung 3 gate wants one member per node (252/252), so
+  every node gets a member, but only leaves carry text — those whose radius is at
+  or above the 147th-largest leaf radius (`rMin = 0.426`), matching the notebook's
+  147 labelled leaves exactly; internal shells and the 73 smaller leaves get the
+  empty string (0 glyphs; 1678 glyphs in total). Text `d.data.name`,
+  `Roboto-Regular`, colour `#333`, white halo (`outlineWidth 0.25`). `fontSize =
+  min(8 px at the target distance, rMin) = 0.426` world units = 4.33 px in the
+  400×250 frame (readable at 1600×1000, `handoff/rung3/eyeball/`). Orientation is
+  **baked**, not billboarded: `orient` returns camera A's initial quaternion
+  `(−0.1632, 0.3368, 0.0594, 0.9254)` for every label, `billboard: false`, 0 flipped.
+  Each label is `anchorX 'center'` and positioned at the leaf's world centre pushed
+  `1.02·r` toward the viewer (along `(0,0,1)` rotated by that quaternion), so it
+  sits on the front of its own sphere and is depth-tested by leaves in front of
+  it — the notebook's clip-path: a hidden leaf keeps no visible label.
 
 ## Camera
 
@@ -120,17 +129,20 @@ two siblings overlap (distance ≥ r_i + r_j − 1e-9), every child inside its p
 enclosing sphere tight, 252 nodes well under a second, plus synthetic hierarchies
 (12², a 100-way fan-out past the nearest-32 cap, 3⁴) and edge cases.
 
-`src/d33.js` (gate change for this rung): picking samples are drawn from the
-pickable node marks, and a sample whose ray is intercepted by a *nearer pickable*
-counts as occluded, not missed; the gate passes when there are no misses and each
-camera hits at least one sample. `gates/*.json` records `sampleSet`, `candidates`,
-`occludedA/B`.
+`src/d33.js` (gate change for this rung, re-applied on top of rung0's per-camera
+sampling after `git merge rung0`): picking samples are drawn from the pickable node
+marks (`sampleSet: 'pickables'`, falling back to all node marks when no pickable is
+a node mark), and a sample whose ray is intercepted by a *nearer pickable* counts as
+occluded, not missed; the gate passes when there are no misses and each camera hits
+at least one sample. `gates/*.json` records `sampled`, `sampleSet`, `candidates`,
+`occludedA/B`. Cluster, tree and bundling are unaffected (0 occlusions, 20/20 hits).
 
 ## For three-rs
 
 d3 modules: d3-hierarchy (hierarchy, sum, sort), d3-scale + d3-interpolate (colour).
 Layout: the packer above, ~480 lines in three's spaced style (about 200 of code,
-including the enclosing-sphere solver), its own test. Per-node output in `marks/d3_pack.json` is the world centre only;
+including the enclosing-sphere solver), its own test. Labels: 147 leaf names at a
+single baked quaternion, centred, offset `1.02·r` toward the viewer, depth-tested. Per-node output in `marks/d3_pack.json` is the world centre only;
 radii are not dumped (leaf `r = cbrt(value) · 10 / R_padded`, shells from the
 packer), so a port needs the packer, not just the marks, to reproduce the shells
 and to check its own against `marks/`.

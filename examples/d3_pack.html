@@ -21,7 +21,8 @@
 					"three/tsl": "/build/three.tsl.js",
 					"three/addons/": "/jsm/",
 					"d3": "/examples/jsm/vendor/d3.js",
-					"d33": "/src/d33.js"
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
 				}
 			}
 		</script>
@@ -34,8 +35,9 @@
 			import { frameCamera } from '/src/frame.js';
 			import { attachOrbit } from '/src/orbit.js';
 			import { paddedPack3 } from '/src/pack3.js';
+			import { hierarchyLabels } from '/src/labels.js';
 
-			let renderer, scene, camera;
+			let renderer, scene, camera, labels;
 
 			await init();
 
@@ -188,6 +190,69 @@
 					elevation: 20, azimuth: 40, fill: 0.85, points: ringPoints
 				} );
 
+				/* ---------------- labels (src/labels.js, rung 3) ----------------
+				   The notebook labels a leaf only when the text fits (r > 10 px:
+				   147 of 220). The rung 3 labels gate wants one Text member per
+				   node (252), so every node gets a member, but only the 147
+				   largest leaves carry text; internal shells and smaller leaves
+				   carry the empty string (zero glyphs). Orientation is baked once
+				   from camera A: every label lies in the plane facing the camera's
+				   initial view direction (same quaternion for all; NOT billboarded,
+				   the camera can orbit away from it). Each label is centred on its
+				   leaf and pushed toward the viewer by the leaf's radius, so it
+				   sits on the front of its own sphere and is depth-tested by the
+				   leaves in front of it — like the notebook's clip-path, a hidden
+				   leaf keeps no visible label. */
+
+				const LABELLED = 147;
+				const leafRadii = root.leaves().map( l => l.r ).sort( ( a, b ) => b - a );
+				const rMin = leafRadii[ Math.min( LABELLED, leafRadii.length ) - 1 ];
+
+				for ( const node of root.descendants() ) {
+
+					node.data.label = ( ! node.children && node.r >= rMin ) ? node.data.name : '';
+
+				}
+
+				// em = the threshold radius (the notebook's 10 px text in a > 10 px
+				// circle), capped at 8 px at the target distance in the 250 px frame.
+				const LABEL_PX = 8;
+				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+				const fontSize = Math.min( LABEL_PX / pxPerUnit, rMin );
+
+				scene.updateMatrixWorld( true );
+				const worldPosition = new Map();
+				for ( const [ node, mesh ] of meshes ) worldPosition.set( node, mesh.getWorldPosition( new THREE.Vector3() ) );
+
+				camera.updateMatrixWorld( true );
+				const facing = camera.quaternion.clone();                        // baked, see layouts/pack.md
+				const toViewer = new THREE.Vector3( 0, 0, 1 ).applyQuaternion( facing );
+
+				labels = await hierarchyLabels( root, ids, worldPosition, {
+					font: '/examples/fonts/Roboto-Regular.ttf',
+					fontSize,
+					color: 0x333333,
+					outlineWidth: 0.25, outlineColor: 0xffffff,
+					orient: () => facing,
+					camera,
+					billboard: false,
+					text: 'label'
+				} );
+
+				// Centre every label on its node, on the viewer's side of the sphere.
+				for ( const l of labels.labels ) {
+
+					l.object.anchorX = 'center';
+					l.anchorX = 'center';
+					l.object.position.copy( worldPosition.get( l.node ) ).addScaledVector( toViewer, l.node.r * 1.02 );
+					l.object.updateMatrix();
+
+				}
+
+				labels.group.updateMatrixWorld( true );
+				labels.batched.sync();
+				scene.add( labels.group );
+
 				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
 				renderer.setPixelRatio( window.devicePixelRatio );
 				renderer.setSize( window.innerWidth, window.innerHeight );
@@ -197,7 +262,11 @@
 				await renderer.init();
 
 				console.log( 'd33 backend:', renderer.backend.constructor.name,
-					'R(root):', root.r.toFixed( 3 ),
+					'R(root):', root.r.toFixed( 3 ), 'rMin:', rMin.toFixed( 3 ),
+					'fontSize:', fontSize.toFixed( 3 ), 'px:', ( fontSize * pxPerUnit ).toFixed( 2 ),
+					'labels:', labels.count, 'with text:', labels.labels.filter( l => l.text ).length,
+					'glyphs:', labels.batched.count, 'flipped:', labels.flipped,
+					'facing:', facing.toArray().map( v => v.toFixed( 4 ) ).join( ',' ),
 					'nodes:', root.descendants().length, 'leaves:', leaves.length );
 
 				attachOrbit( camera, renderer.domElement, target );
@@ -207,13 +276,15 @@
 				register( {
 					renderer, scene, camera, marks, target,
 					expected: { nodes: root.descendants().length, links: 0 },
-					pickables: leaves
+					pickables: leaves,
+					labels
 				} );
 
 			}
 
 			function animate() {
 
+				labels.update( camera ); // no-op unless billboard: true
 				renderer.render( scene, camera );
 
 			}

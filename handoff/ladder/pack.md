@@ -7,6 +7,7 @@
 | marks | `marks/d3_pack.json` (252 nodes, 0 links) |
 | layout note | `layouts/pack.md` |
 | packer + test | `src/pack3.js`, `test/pack3.test.mjs` (`npm test`) |
+| labels | 252 members (147 leaves with text, the rest empty), via `src/labels.js` |
 | reference render of the original notebook | `ref/pack.png` (928×928) |
 
 Source notebook: `d3-gallery/notebooks/hierarchies/pack.v2`, data
@@ -50,12 +51,19 @@ centre). Shipped result: 20 sampled, hit 5 / 3, occluded 15 / 17, misses 0.
 **Camera:** PerspectiveCamera fov 40, elevation 20°, azimuth 40°, fitted to 288
 points on the root sphere's surface at 0.85 fill. Fixed; one frame.
 
+**Labels:** rung 3 `hierarchyLabels`, one Text per node. Text only on the 147
+largest leaves (`r ≥ 0.426`, the notebook's 147 labelled leaves), `d.data.name`,
+Roboto, `#333` with a white halo, fontSize 0.426 (4.33 px in the 250 px frame).
+Orientation baked once from camera A, quaternion `(−0.1632, 0.3368, 0.0594, 0.9254)`,
+not billboarded; each label centred on its leaf and pushed `1.02·r` toward the
+viewer, so leaves in front hide it like the notebook's clip-path. 0 flipped.
+
 **Gates:** depth 0.676 · counts 252/252, 0/0 · angle 0.174 / 0.182 · picking
 20 sampled, 0 misses (5 / 3 hit, 15 / 17 occluded by a nearer leaf) from the two
-cameras. `e2e:twice` = 0 differing pixels.
+cameras · labels 252/252. `e2e:twice` = 0 differing pixels.
 
-**Gap:** no labels — rung 3 (lib3 sdf-text) had not landed when this was built.
-`layouts/pack.md` specifies them (leaves above a radius threshold matching the
-notebook's 147 labelled leaves, quaternion baked from camera A once, white halo).
-The three-rs side also needs a translucent, `depthWrite`-off material with explicit
-draw order to reproduce the shells.
+**Gap:** the packing density is greedy-grade (root 0.42, deepest median 0.30; the
+best-known equal-sphere packings reach ~0.6), and 4.33 px labels are only legible
+in the small frame for the biggest leaves — both are choices the note records, not
+defects. The three-rs side needs a translucent, `depthWrite`-off material with
+explicit draw order to reproduce the shells, and SDF text at a fixed quaternion.
