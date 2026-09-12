@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - disjoint force-directed graph in three dimensions</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 disjoint force-directed graph (patents and cited works) lifted to d3-force-3d</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import { register } from 'd33';
+			import { fatLine, lineMaterial } from '/src/link.js';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+
+			let renderer, scene, camera;
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data + d3 layout (as the notebook's chart cell, in 3D) ---------------- */
+
+				const data = await fetch( '/gallery/networks/disjoint-force-directed-graph.v2/files/graph.json' ).then( r => r.json() );
+
+				// Specify the color scale.
+				const color = d3.scaleOrdinal( d3.schemeCategory10 );
+
+				// The force simulation mutates links and nodes, so create a copy.
+				// Node order and link order as in the file.
+				const links = data.links.map( d => ( { ...d } ) );
+				const nodes = data.nodes.map( d => ( { ...d } ) );
+
+				const { position, extent, scale, ticks } = forceLayout( nodes, links );
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.2 ) );
+
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.8 );
+				sun.position.set( 1, 2, 1.5 ).normalize();
+				scene.add( sun );
+
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				/* ---------------- marks: one Object3D per datum ---------------- */
+
+				// node marks: one sphere per node (a citing patent or a cited work),
+				// coloured by `group` with schemeCategory10 as in the notebook. The notebook's white 1.5 px
+				// outline has no one-object counterpart (a second back-face sphere
+				// would be two objects per datum); a light emissive lifts the
+				// colour off the grey links instead.
+				// r 0.18: the notebook's r 5 is 0.15 of its 680 px disc; d3_force's
+				// 0.25 read too large for a cloud of 336 nodes at pitch ~1.
+				const NODE_R = 0.18;
+				const nodeGeometry = new THREE.SphereGeometry( NODE_R, 16, 12 );
+				const materials = new Map(); // group -> material
+
+				const nodeGroup = new THREE.Group();
+				nodeGroup.name = 'nodes';
+				scene.add( nodeGroup );
+
+				const ids = new Map();
+				nodes.forEach( ( node, i ) => ids.set( node, 'n' + i ) );
+
+				const marks = [];
+
+				for ( const node of nodes ) {
+
+					if ( ! materials.has( node.group ) ) {
+
+						const c = new THREE.Color( color( node.group ) );
+						materials.set( node.group, new THREE.MeshStandardNodeMaterial( {
+							color: c, emissive: c, emissiveIntensity: 0.18, roughness: 0.6, metalness: 0
+						} ) );
+
+					}
+
+					const mesh = new THREE.Mesh( nodeGeometry, materials.get( node.group ) );
+					mesh.position.copy( position.get( node ) );
+					mesh.name = node.id;
+					nodeGroup.add( mesh );
+
+					marks.push( { id: ids.get( node ), kind: 'node', object: mesh } );
+
+				}
+
+				// links: one straight fat line per citation, #999 at opacity 0.6,
+				// linewidth sqrt(value) px as the notebook's stroke-width. One
+				// material per distinct width, shared.
+				const linkMaterials = new Map(); // linewidth -> material
+				const linkGroup = new THREE.Group();
+				linkGroup.name = 'links';
+				scene.add( linkGroup );
+
+				for ( const link of links ) {
+
+					const w = Math.sqrt( link.value );
+
+					if ( ! linkMaterials.has( w ) ) {
+
+						linkMaterials.set( w, lineMaterial( { color: 0x999999, opacity: 0.6, linewidth: w } ) );
+
+					}
+
+					const a = position.get( link.source );
+					const b = position.get( link.target );
+					const line = fatLine( [ a, b ], { material: linkMaterials.get( w ) } );
+					line.name = link.source.id + ' - ' + link.target.id;
+					linkGroup.add( line );
+
+					marks.push( {
+						id: 'l' + ( marks.length - nodes.length ), kind: 'link', object: line,
+						a: ids.get( link.source ), b: ids.get( link.target )
+					} );
+
+				}
+
+				/* ---------------- camera ---------------- */
+
+				const nodePoints = nodes.map( n => position.get( n ) );
+
+				const box = new THREE.Box3();
+				for ( const p of nodePoints ) box.expandByPoint( p );
+
+				const view = { elevation: 15, azimuth: 35, fill: 0.85 };
+				const target = frameCamera( camera, box, { ...view, points: nodePoints } );
+
+				/* ---------------- labels: none ----------------
+				   The notebook draws no text; node ids are `<title>` tooltips only
+				   (236 patent serial numbers and 100 paper titles up to 250
+				   characters). Drawn as 336 planar labels they buried the marks,
+				   so the page labels nothing: `expected.labels = 0`, and the id
+				   stays on `mesh.name`. */
+
+				/* ---------------- renderer ---------------- */
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'ticks:', ticks, 'scale:', scale.toFixed( 5 ),
+					'extent:', extent.map( e => e.toFixed( 3 ) ).join( ' x ' ),
+					'nodes:', nodes.length, 'links:', links.length );
+
+				const controls = attachOrbit( camera, renderer.domElement, target );
+
+				window.d33dev = { camera, controls };
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: data.nodes.length, links: data.links.length, labels: 0 },
+					pickables: nodeGroup.children
+				} );
+
+			}
+
+			/* ---------------- the layout (layouts/disjoint.md) ----------------
+			   The notebook's forces in three dimensions via d3-force-3d:
+			   `forceSimulation(nodes, 3)` with forceLink, forceManyBody and the
+			   positioning forces forceX, forceY — plus forceZ, the third axis's
+			   positioning force — all at d3's defaults (strength 0.1 towards 0).
+			   The notebook uses positioning forces, not forceCenter, so that
+			   detached components cannot drift off; in 3D the same forces hold
+			   the 83 components in a cloud around the origin. Seeded
+			   (`randomSource(randomLcg(0.5))`), stopped, and ticked
+			   synchronously to convergence — the same number of ticks the
+			   simulation would take on its own timer — so the page renders
+			   the converged state and never animates. The result is then
+			   centred on its bounding box and scaled so the largest axis
+			   extent is 20. */
+
+			function forceLayout( nodes, links, { EXTENT = 20 } = {} ) {
+
+				const { forceSimulation, forceLink, forceManyBody, forceX, forceY, forceZ } = d3.force3d;
+
+				const simulation = forceSimulation( nodes, 3 )
+					.randomSource( d3.randomLcg( 0.5 ) )
+					.force( 'link', forceLink( links ).id( d => d.id ) )
+					.force( 'charge', forceManyBody() )
+					.force( 'x', forceX() )
+					.force( 'y', forceY() )
+					.force( 'z', forceZ() )
+					.stop();
+
+				// ticks until alpha < alphaMin, exactly as the timer would do them
+				const ticks = Math.ceil( Math.log( simulation.alphaMin() ) / Math.log( 1 - simulation.alphaDecay() ) );
+				simulation.tick( ticks );
+
+				const box = new THREE.Box3();
+				for ( const n of nodes ) box.expandByPoint( new THREE.Vector3( n.x, n.y, n.z ) );
+
+				const size = box.getSize( new THREE.Vector3() );
+				const centre = box.getCenter( new THREE.Vector3() );
+				const scale = EXTENT / Math.max( size.x, size.y, size.z );
+
+				const position = new Map();
+				for ( const n of nodes ) {
+
+					position.set( n, new THREE.Vector3( n.x, n.y, n.z ).sub( centre ).multiplyScalar( scale ) );
+
+				}
+
+				return { position, ticks, scale, extent: [ size.x * scale, size.y * scale, size.z * scale ] };
+
+			}
+
+			function animate() {
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
