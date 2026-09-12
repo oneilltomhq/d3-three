@@ -1,0 +1,66 @@
+{
+	"file": "d3_blank",
+	"gates": {
+		"depth": {
+			"extents": [
+				0,
+				0,
+				0
+			],
+			"ratio": 0,
+			"pass": false,
+			"note": "no node or cell marks"
+		},
+		"counts": {
+			"nodes": 0,
+			"links": 0,
+			"expectedNodes": 0,
+			"expectedLinks": 0,
+			"pass": true
+		},
+		"angle": {
+			"a": {
+				"width": 0,
+				"height": 0,
+				"area": 0
+			},
+			"b": {
+				"width": 0,
+				"height": 0,
+				"area": 0
+			},
+			"threshold": 0.01,
+			"pass": false,
+			"note": "no node marks"
+		},
+		"picking": {
+			"sampled": 0,
+			"hitA": 0,
+			"hitB": 0,
+			"misses": [],
+			"pass": false,
+			"note": "no node marks"
+		},
+		"pass": false
+	},
+	"expected": {
+		"nodes": 0,
+		"links": 0
+	},
+	"target": {
+		"x": 0,
+		"y": 0,
+		"z": 0
+	},
+	"env": {
+		"backend": "WebGPUBackend",
+		"isWebGPUBackend": true,
+		"hasNavigatorGPU": true,
+		"adapterInfo": {
+			"vendor": "google",
+			"architecture": "swiftshader",
+			"device": "",
+			"description": ""
+		}
+	}
+}

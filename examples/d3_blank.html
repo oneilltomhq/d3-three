@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - blank</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #000; overflow: hidden; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - blank page (rung 0): empty scene, zero marks, fails the gates honestly</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d33": "/src/d33.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import { register } from 'd33';
+
+			let renderer, scene, camera;
+
+			await init();
+
+			async function init() {
+
+				// Record what the WebGPU adapter actually is, so the harness can
+				// prove this is not a WebGL fallback (rung 0 determinism item 7).
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor,
+							architecture: info.architecture,
+							device: info.device,
+							description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0x0b0b12 );
+
+				camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 1000 );
+				camera.position.set( 0, 0, 10 );
+				camera.lookAt( 0, 0, 0 );
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'navigator.gpu:', !! navigator.gpu,
+					'adapter:', JSON.stringify( window.__d33AdapterInfo ) );
+
+				// Zero marks on purpose: the blank page must fail depth, angle and
+				// picking, and pass counts (0 === 0), and say so out loud.
+				register( {
+					renderer, scene, camera,
+					marks: [],
+					expected: { nodes: 0, links: 0 }
+				} );
+
+			}
+
+			function animate() {
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

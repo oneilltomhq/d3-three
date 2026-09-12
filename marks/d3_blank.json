@@ -1,0 +1,8 @@
+{
+	"file": "d3_blank",
+	"expected": {
+		"nodes": 0,
+		"links": 0
+	},
+	"marks": []
+}

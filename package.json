@@ -1,0 +1,25 @@
+{
+	"name": "d33",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"description": "D3 gallery examples lifted into real 3D with Three.js WebGPURenderer",
+	"scripts": {
+		"build:d3": "esbuild src/vendor/d3-entry.js --bundle --format=esm --outfile=examples/jsm/vendor/d3.js",
+		"e2e": "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json node test/e2e/puppeteer.js",
+		"e2e:make": "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json node test/e2e/puppeteer.js --make",
+		"e2e:twice": "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json node test/e2e/puppeteer.js --twice",
+		"determinism": "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json node test/e2e/determinism.js",
+		"serve": "node test/e2e/server.js"
+	},
+	"dependencies": {
+		"d3": "^7.9.0",
+		"d3-force-3d": "^3.0.5"
+	},
+	"devDependencies": {
+		"esbuild": "^0.25.0",
+		"jpeg-js": "^0.4.4",
+		"pngjs": "^7.0.0",
+		"puppeteer": "25.9.0"
+	}
+}
