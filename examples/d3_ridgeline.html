@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - ridgeline plot, series along z</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 ridgeline plot (traffic), the series lifted along z: one standing slab per location</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import { register } from 'd33';
+			import { fatLine, lineMaterial } from '/src/link.js';
+			import { sampleCurve, ridgeGeometry, summit } from '/src/ridge.js';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
+			import { VectorFont } from 'lib3/sdf-text';
+
+			let renderer, scene, camera, labels;
+
+			/* ---------------- layouts/ridgeline.md ----------------
+			   A ridgeline plot is a 3D chart drawn in 2D: the series are stacked
+			   down the page and overlap. Lifted: the page's y (series) becomes
+			   world z, the value becomes world y, and each series is one slab
+			   standing in its own xy plane — the notebook's own curveBasis area,
+			   sampled densely and extruded a little in z. The notebook's
+			   dimensions are kept as ratios: its 788 px plot width is the 20-unit
+			   x axis, its y.step() is the z pitch, its axis and label paddings
+			   are the same px scaled. */
+
+			const WIDTH = 928;                       // the notebook's dimensions
+			const MARGIN = { top: 40, right: 20, bottom: 30, left: 120 };
+			const ROW_PX = 17;                       // height = series.length * 17
+			const OVERLAP = 12;                      // the notebook's 8: see below
+			const EXTENT = 20;                       // world units of the x axis (the notebook's 788 px)
+			const S = EXTENT / ( WIDTH - MARGIN.left - MARGIN.right ); // notebook px -> world units
+			const THICK_RATIO = 0.4;                 // slab thickness as a fraction of the z pitch
+			const FONT = '/examples/fonts/Roboto-Regular.ttf';
+			const FONT_PX = 12;                      // the notebook's axis font is 10px; 12 is the most the row pitch
+			                                         // allows flat labels (ascender to descender 1.17 em < 15.57 px)
+			const TICK_PX = 6, TICK_PAD_PX = 3, NAME_PAD_PX = 4; // d3.axis defaults / the notebook's tickPadding(4)
+			const LINE_PX = 2;                       // the notebook's 1 px stroke, as a fat line (device px; the harness renders at 2x)
+			const LIFT = 0.004;                      // edge line above the slab's face, against z-fighting
+			const MARK_INSET = 0.03;                 // the mark sits this far under the summit, inside the front face
+			const SAMPLES = 6;                       // curve samples per data interval (>= 4)
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data + d3 scales (the notebook's chart cell) ---------------- */
+
+				// FileAttachment("traffic.csv").csv({typed: true})
+				const traffic = d3.csvParse( await fetch( '/gallery/areas/ridgeline-plot/files/traffic.csv' ).then( r => r.text() ), d3.autoType );
+
+				// Prepare the series (verbatim).
+				const dates = Array.from( d3.group( traffic, d => + d.date ).keys() ).sort( d3.ascending );
+				const series = d3.groups( traffic, d => d.name ).map( ( [ name, values ] ) => {
+
+					const value = new Map( values.map( d => [ + d.date, d.value ] ) );
+					return { name, values: dates.map( d => value.get( d ) ) };
+
+				} );
+
+				const n = series.length;
+				const height = n * ROW_PX;
+
+				// The notebook's scales, in world units. x: time -> [0, EXTENT].
+				// y (the notebook's scalePoint down the page): one z per series;
+				// the notebook's series 0 is at the top and each later series is
+				// painted over the one above it, so the LAST series is the front
+				// one here (z = 0) and the first the farthest (z = -(n-1) * PITCH).
+				const x = d3.scaleTime()
+					.domain( d3.extent( dates ) )
+					.range( [ 0, EXTENT ] );
+
+				const yStepPx = ( height - MARGIN.bottom - MARGIN.top ) / ( n - 1 ); // d3.scalePoint().step()
+				const PITCH = yStepPx * S;
+				const zOf = i => - ( n - 1 - i ) * PITCH;
+
+				// z (the notebook's value scale, negative px up the page) -> world +y.
+				// The notebook's range is overlap * y.step() for the nice maximum;
+				// with the notebook's 8 the summits span too little height for
+				// the depth gate (0.18 with 8; see layouts/ridgeline.md), so the
+				// ridges are 12 rows tall instead of 8.
+				const HEIGHT = OVERLAP * PITCH;
+				const y = d3.scaleLinear()
+					.domain( [ 0, d3.max( series, d => d3.max( d.values ) ) ] ).nice()
+					.range( [ 0, HEIGHT ] );
+
+				const THICK = THICK_RATIO * PITCH;
+
+				// The notebook's top-line generator (area.lineY1()), in world units.
+				const line = d3.line()
+					.curve( d3.curveBasis )
+					.defined( d => ! isNaN( d ) )
+					.x( ( d, i ) => x( dates[ i ] ) )
+					.y( d => y( d ) );
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xb8bcc4, 1.6 ) );
+
+				// the front faces (the notebook's page) brightest, the top lip a
+				// shade darker, the x-end caps darkest
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.7 );
+				sun.position.set( - 0.35, 0.6, 1.0 ).normalize();
+				scene.add( sun );
+
+				// a narrower fov than the other pages: the far rows' labels are
+				// roughly twice as distant as the near ones at 35 and shrank to ~8 px
+				camera = new THREE.PerspectiveCamera( 28, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				/* ---------------- marks: one Mesh per series ----------------
+				   The slab: the sampled curveBasis top edge closed to the baseline
+				   and extruded THICK along z, centred on the series' z. Mark = the
+				   summit of the drawn edge, MARK_INSET below it on the front face
+				   (a point on the boundary itself may or may not raycast), normal
+				   +z. The notebook's black top line is a fat line child of the
+				   slab, on the front-top corner, lifted LIFT off both faces. */
+
+				const fill = new THREE.MeshStandardNodeMaterial( { color: 0xf0f0f0, roughness: 0.85, metalness: 0 } ); // lands near the notebook's #ddd on the lit front faces
+				const edge = lineMaterial( { color: 0x000000, linewidth: LINE_PX } );
+				const FRONT = [ 0, 0, 1 ];
+
+				const ridges = new THREE.Group();
+				ridges.name = 'ridges';
+				scene.add( ridges );
+
+				const marks = [];
+				const tops = [];    // sampled top edge per series, world (x, y)
+				const summits = [];
+
+				for ( let i = 0; i < n; i ++ ) {
+
+					const s = series[ i ];
+					const top = sampleCurve( line, s.values, SAMPLES );
+					const peak = summit( top );
+					const origin = new THREE.Vector2( peak.x, peak.y - MARK_INSET );
+
+					const mesh = new THREE.Mesh( ridgeGeometry( top, { thickness: THICK, origin } ), fill );
+					mesh.position.set( origin.x, origin.y, zOf( i ) + THICK / 2 );
+					mesh.name = s.name;
+
+					const points = top.map( p => new THREE.Vector3( p.x - origin.x, p.y - origin.y + LIFT, LIFT ) );
+					const stroke = fatLine( points, { material: edge } );
+					stroke.name = s.name + ' line';
+					mesh.add( stroke );
+
+					ridges.add( mesh );
+					tops.push( top );
+					summits.push( peak );
+
+					marks.push( { id: 'c' + i, kind: 'cell', object: mesh, normal: FRONT } );
+
+				}
+
+				/* ---------------- the x axis: d3.axisBottom(x).ticks(width / 80), along the front ----------------
+				   The notebook's axis sits at the last series' baseline; here that
+				   is the front slab's foot. Domain line + 6 px ticks toward the
+				   viewer (+z, the notebook's down) as one LineSegments; not marks. */
+
+				const tickCount = WIDTH / 80;
+				const ticks = x.ticks( tickCount );
+				const tickFormat = x.tickFormat( tickCount );
+				const zAxis = THICK / 2 + LIFT;
+
+				const axisPoints = [ new THREE.Vector3( 0, LIFT, zAxis ), new THREE.Vector3( EXTENT, LIFT, zAxis ) ];
+				for ( const t of ticks ) {
+
+					axisPoints.push( new THREE.Vector3( x( t ), LIFT, zAxis ), new THREE.Vector3( x( t ), LIFT, zAxis + TICK_PX * S ) );
+
+				}
+
+				const axis = new THREE.LineSegments( new THREE.BufferGeometry().setFromPoints( axisPoints ), new THREE.LineBasicNodeMaterial( { color: 0x000000 } ) );
+				axis.name = 'x axis';
+				scene.add( axis );
+
+				/* ---------------- labels: flat in the ground plane ----------------
+				   Both label sets as the notebook: series names (axisLeft, tickSize
+				   0, tickPadding 4, anchor end) at each ridge's left foot; tick
+				   labels (anchor middle, below the ticks) along the front. All
+				   lie in the ground plane, baseline +x, up -z (the notebook's up,
+				   seen from the front), fontSize = the notebook's 10 px. */
+
+				const fontSize = FONT_PX * S;
+				const flat = basisQuaternion( new THREE.Vector3( 1, 0, 0 ), new THREE.Vector3( 0, 0, - 1 ) );
+
+				const font = await VectorFont.load( FONT );
+				const measure = text => {
+
+					let units = 0;
+					for ( let i = 0; i < text.length; i ++ ) {
+
+						units += font.advanceWidth( text[ i ] );
+						if ( i ) units += font.kerning( text[ i - 1 ], text[ i ] );
+
+					}
+
+					return units / font.unitsPerEm * fontSize;
+
+				};
+
+				const wrappers = [];
+				const labelIds = new Map();
+				const anchors = new Map();
+				const labelCorners = []; // far ends, for the camera fit
+
+				// names: `children: []` makes hierarchyLabels anchor them `end`, offset -x by internalOffset
+				for ( let i = 0; i < n; i ++ ) {
+
+					const w = { data: { name: series[ i ].name }, children: [] };
+					wrappers.push( w );
+					labelIds.set( w, 'c' + i );
+					anchors.set( w, new THREE.Vector3( 0, 0, zOf( i ) ) );
+					labelCorners.push( new THREE.Vector3( - NAME_PAD_PX * S - measure( series[ i ].name ), 0, zOf( i ) ) );
+
+				}
+
+				// ticks: leaves anchored `start` with leafOffset 0, pre-shifted by half their width = anchor middle;
+				// centre line at tick end + padding + ~half an em (d3's y = 9, dy = 0.71em)
+				const zTickText = zAxis + ( TICK_PX + TICK_PAD_PX ) * S + 0.5 * fontSize;
+
+				ticks.forEach( ( t, k ) => {
+
+					const text = tickFormat( t );
+					const w = { data: { name: text } };
+					wrappers.push( w );
+					labelIds.set( w, 'x' + k );
+					anchors.set( w, new THREE.Vector3( x( t ) - measure( text ) / 2, 0, zTickText ) );
+					labelCorners.push( new THREE.Vector3( x( t ), 0, zTickText + 0.5 * fontSize ) );
+
+				} );
+
+				/* ---------------- camera ---------------- */
+
+				const box = new THREE.Box3();
+				for ( const mesh of ridges.children ) box.expandByObject( mesh );
+
+				const corners = [];
+				for ( let i = 0; i < 8; i ++ ) corners.push( new THREE.Vector3( i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z ) );
+
+				const view = { elevation: 25, azimuth: - 35, fill: 0.85 };
+				const target = frameCamera( camera, box, { ...view, points: corners.concat( labelCorners ) } );
+
+				labels = await hierarchyLabels( { descendants: () => wrappers }, labelIds, anchors, {
+					font: FONT,
+					fontSize,
+					color: 0x000000,
+					outlineWidth: 0.2, outlineColor: 0xffffff,
+					leafOffset: 0,
+					internalOffset: NAME_PAD_PX * S,
+					orient: () => flat,
+					camera,
+					billboard: false
+				} );
+				scene.add( labels.group );
+
+				/* ---------------- renderer ---------------- */
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'series:', n, 'dates:', dates.length, 'samples/series:', tops[ 0 ].length,
+					'pitch:', PITCH.toFixed( 4 ), 'height:', HEIGHT.toFixed( 3 ), 'thick:', THICK.toFixed( 3 ),
+					'fontSize:', fontSize.toFixed( 3 ), 'px:', ( fontSize * pxPerUnit ).toFixed( 2 ),
+					'labels:', labels.count, 'flipped:', labels.flipped );
+
+				const controls = attachOrbit( camera, renderer.domElement, target );
+				window.d33dev = { camera, controls, labels };
+
+				// for the worker's checks: the scales and every ridge's summit
+				window.__ridgeline = {
+					S, PITCH, HEIGHT, THICK, EXTENT, fontSize, pxPerUnit,
+					ticks: ticks.map( tickFormat ),
+					series: series.map( ( s, i ) => ( { name: s.name, z: zOf( i ), summit: [ summits[ i ].x, summits[ i ].y ], max: d3.max( s.values ), samples: tops[ i ].length } ) )
+				};
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: 0, links: 0, cells: n, labels: wrappers.length },
+					pickables: ridges.children,
+					labels
+				} );
+
+			}
+
+			function animate() {
+
+				labels.update( camera ); // per-frame mirror flip (plane fixed); billboard if enabled
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

@@ -118,9 +118,11 @@ page.on( 'console', m => { if ( m.type() === 'error' ) console.error( '[page]', 
 // go to the served origin first, so the page can import the d3 bundle
 await page.goto( `http://localhost:${ port }/examples/` );
 
-await page.setContent( `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-	/* explicit: headless Chromium here inherits the desktop's dark scheme, so "fill: currentColor"
-	   (every d3.axis label and tick) came out white on white */
+// `color-scheme: light` and an explicit `color`: the served origin's listing page
+// declares `light dark`, and under a dark-preferring headless Chromium that made
+// `currentColor` — d3-axis text and tick strokes — render white on white
+// (ridgeline-plot; measured: computed color rgb(255,255,255)).
+await page.setContent( `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="color-scheme" content="light"><style>
 	html, body { margin: 0; background: #fff; color: #000; }
 	#chart { display: inline-block; font: 10px sans-serif; }
 	/* a chart that sizes itself only by viewBox (sunburst.v2: autoBox) gets the notebook width */
