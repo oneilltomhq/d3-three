@@ -5,9 +5,10 @@
 //   register( { renderer, scene, camera, marks, expected, target } )
 //
 //   marks:    one entry per datum (HANDOFF §C.11)
-//             { id, kind: 'node' | 'link' | 'cell', object, a?, b? }
-//             `a`/`b` are the ids of the two endpoint marks of a link.
-//   expected: { nodes, links } straight off the d3 hierarchy
+//             { id, kind: 'node' | 'link' | 'cell' | 'extension', object, a?, b? }
+//             `a`/`b` are the ids of the two endpoint marks of a link;
+//             an `extension` (tree-of-life's leaf link extension) carries `a`.
+//   expected: { nodes, links, extensions? } straight off the d3 hierarchy
 //             ( root.descendants().length, root.links().length ) (§C.12)
 //   target:   optional orbit target; defaults to the centroid of node/cell marks.
 //   normal:   optional on a mark (unit Vector3 or [x,y,z]); the picking gate
@@ -216,10 +217,13 @@ function countsGate( marks ) {
 	const links = marks.filter( m => m.kind === 'link' ).length;
 	const expectedNodes = state.expected.nodes | 0;
 	const expectedLinks = state.expected.links | 0;
+	// `extension` marks (tree-of-life): one per leaf, counted only when the page declares them
+	const extensions = marks.filter( m => m.kind === 'extension' ).length;
+	const expectedExtensions = state.expected.extensions | 0;
 
 	return {
-		nodes, links, expectedNodes, expectedLinks,
-		pass: nodes === expectedNodes && links === expectedLinks
+		nodes, links, extensions, expectedNodes, expectedLinks, expectedExtensions,
+		pass: nodes === expectedNodes && links === expectedLinks && extensions === expectedExtensions
 	};
 
 }
@@ -230,8 +234,10 @@ function labelsGate( marks ) {
 
 	const nodes = marks.filter( m => m.kind === 'node' ).length;
 	const count = state.labels ? state.labels.count | 0 : 0;
+	// a page may label a subset (tree-of-life: leaves only) via `expected.labels`
+	const expected = state.expected.labels !== undefined ? state.expected.labels | 0 : nodes;
 
-	const out = { count, expectedNodes: nodes, pass: count === nodes };
+	const out = { count, expectedNodes: expected, pass: count === expected };
 	if ( ! state.labels ) out.note = 'no labels registered';
 	return out;
 

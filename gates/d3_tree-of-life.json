@@ -1,0 +1,73 @@
+{
+	"file": "d3_tree-of-life",
+	"gates": {
+		"depth": {
+			"extents": [
+				19.99932365143681,
+				8.000000000000002,
+				19.998647325745992
+			],
+			"ratio": 0.4000135274287267,
+			"pass": true
+		},
+		"counts": {
+			"nodes": 381,
+			"links": 380,
+			"extensions": 191,
+			"expectedNodes": 381,
+			"expectedLinks": 380,
+			"expectedExtensions": 191,
+			"pass": true
+		},
+		"angle": {
+			"a": {
+				"width": 0.5086058526464263,
+				"height": 0.5123575525286651,
+				"area": 0.2605880498636779
+			},
+			"b": {
+				"width": 0.506987101813778,
+				"height": 0.4975155433688835,
+				"area": 0.25223396343989724
+			},
+			"threshold": 0.01,
+			"pass": true
+		},
+		"picking": {
+			"sampled": 20,
+			"sampledA": 20,
+			"sampledB": 20,
+			"hitA": 20,
+			"hitB": 20,
+			"pickables": 381,
+			"misses": [],
+			"pass": true
+		},
+		"labels": {
+			"count": 191,
+			"expectedNodes": 191,
+			"pass": true
+		},
+		"pass": true
+	},
+	"expected": {
+		"nodes": 381,
+		"links": 380
+	},
+	"target": {
+		"x": -0.0027083797414860084,
+		"y": 3.9512398516584475,
+		"z": 0.03961105078188383
+	},
+	"env": {
+		"backend": "WebGPUBackend",
+		"isWebGPUBackend": true,
+		"hasNavigatorGPU": true,
+		"adapterInfo": {
+			"vendor": "google",
+			"architecture": "swiftshader",
+			"device": "",
+			"description": ""
+		}
+	}
+}

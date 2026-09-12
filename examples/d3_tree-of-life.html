@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - tree of life on a cylinder</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 tree of life (life.txt) on a cylinder: angle x cluster depth x branch length</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import { register } from 'd33';
+			import { fatLine, lineMaterial } from '/src/link.js';
+			import { stepCurve, cylinderPoint } from '/src/step.js';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
+
+			let renderer, scene, camera, labels;
+
+			const UP = new THREE.Vector3( 0, 1, 0 );
+
+			/* ---------------- the notebook's own cells, verbatim ---------------- */
+
+			function parseNewick(a){for(var e=[],r={},s=a.split(/\s*(;|\(|\)|,|:)\s*/),t=0;t<s.length;t++){var n=s[t];switch(n){case"(":var c={};r.branchset=[c],e.push(r),r=c;break;case",":var c={};e[e.length-1].branchset.push(c),r=c;break;case")":r=e.pop();break;case":":break;default:var h=s[t-1];")"==h||"("==h||","==h?r.name=n:":"==h&&(r.length=parseFloat(n))}}return r}
+
+			function maxLength(d) {
+			  return d.data.length + (d.children ? d3.max(d.children, maxLength) : 0);
+			}
+
+			function setRadius(d, y0, k) {
+			  d.radius = (y0 += d.data.length) * k;
+			  if (d.children) d.children.forEach(d => setRadius(d, y0, k));
+			}
+
+			const color = d3.scaleOrdinal()
+			    .domain(["Bacteria", "Eukaryota", "Archaea"])
+			    .range(d3.schemeCategory10);
+
+			function setColor(d) {
+			  var name = d.data.name;
+			  d.color = color.domain().indexOf(name) >= 0 ? color(name) : d.parent ? d.parent.color : null;
+			  if (d.children) d.children.forEach(setColor);
+			}
+
+			/* ---------------- the cylinder (layouts/tree-of-life.md) ---------------- */
+
+			const R = 10;          // rim radius: cluster depth y runs 0 (root, on the axis) .. R (every leaf)
+			const H = 8;           // height: cumulative branch length runs 0 (root) .. H (the longest path)
+			const NODE_R = 0.12;   // node sphere radius
+
+			// angle: the notebook's `(x − 90)° → rad` from linkStep, so its screen x is
+			// world +x and its screen y (down) is world +z; height is world +y.
+			const angle = node => ( node.x - 90 ) / 180 * Math.PI;
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data + d3 layout (as the notebook's chart cell) ---------------- */
+
+				const data = parseNewick( await fetch( '/examples/data/life.txt' ).then( r => r.text() ) );
+
+				const root = d3.hierarchy( data, d => d.branchset )
+					.sum( d => d.branchset ? 0 : 1 )
+					.sort( ( a, b ) => ( a.value - b.value ) || d3.ascending( a.data.length, b.data.length ) );
+
+				// the notebook's `cluster` cell with innerRadius = R: node.x in degrees, node.y in 0..R
+				d3.cluster()
+					.size( [ 360, R ] )
+					.separation( ( a, b ) => 1 )( root );
+
+				// node.radius = cumulative branch length, scaled so the longest path is H
+				setRadius( root, root.data.length = 0, H / maxLength( root ) );
+				setColor( root );
+
+				const position = new Map();
+				root.each( node => position.set( node, cylinderPoint( angle( node ), node.y, node.radius ) ) );
+
+				const ids = new Map();
+				root.each( ( node, i ) => ids.set( node, 'n' + i ) );
+
+				// label text: the notebook's `name.replace(/_/g, " ")` (leaves only, as the notebook)
+				for ( const leaf of root.leaves() ) leaf.data.label = leaf.data.name.replace( /_/g, ' ' );
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.2 ) );
+
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.8 );
+				sun.position.set( 1, 2, 1.5 ).normalize();
+				scene.add( sun );
+
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				/* ---------------- marks: one Object3D per datum ---------------- */
+
+				// node marks: one small sphere per descendant, coloured by setColor
+				// (null, the root and the clade above the three domains: black).
+				const nodeGeometry = new THREE.SphereGeometry( NODE_R, 12, 8 );
+				const nodeMaterials = new Map();
+				const nodeMaterial = c => {
+
+					const key = c || '#000';
+					if ( ! nodeMaterials.has( key ) ) {
+
+						nodeMaterials.set( key, new THREE.MeshStandardNodeMaterial( { color: new THREE.Color( key ), roughness: 0.65, metalness: 0 } ) );
+
+					}
+
+					return nodeMaterials.get( key );
+
+				};
+
+				const nodes = new THREE.Group();
+				nodes.name = 'nodes';
+				scene.add( nodes );
+
+				const marks = [];
+
+				for ( const node of root.descendants() ) {
+
+					const mesh = new THREE.Mesh( nodeGeometry, nodeMaterial( node.color ) );
+					mesh.position.copy( position.get( node ) );
+					mesh.name = node.data.name || '';
+					nodes.add( mesh );
+
+					marks.push( { id: ids.get( node ), kind: 'node', object: mesh } );
+
+				}
+
+				// links: one fat line per root.links(), the 3D linkStep (src/step.js):
+				// an arc at the source's (radius, height) to the target's angle, then a
+				// straight piece to the target. Colour = target's setColor colour, as
+				// the notebook's `stroke`; one shared material per colour.
+				const LINK_PX = 2; // the notebook's 1 px stroke after the harness's 2x render + box filter
+				const linkMaterials = new Map();
+				const linkMaterial = c => {
+
+					const key = c || '#000';
+					if ( ! linkMaterials.has( key ) ) {
+
+						linkMaterials.set( key, lineMaterial( { color: new THREE.Color( key ), opacity: 1, linewidth: LINK_PX } ) );
+
+					}
+
+					return linkMaterials.get( key );
+
+				};
+
+				const links = new THREE.Group();
+				links.name = 'links';
+				scene.add( links );
+
+				for ( const link of root.links() ) {
+
+					const s = link.source, t = link.target;
+					const points = stepCurve( angle( s ), s.y, s.radius, angle( t ), t.y, t.radius );
+					const line = fatLine( points, { material: linkMaterial( t.color ) } );
+					line.name = ( s.data.name || '' ) + ' -> ' + ( t.data.name || '' );
+					links.add( line );
+
+					marks.push( {
+						id: 'l' + marks.length, kind: 'link', object: line,
+						a: ids.get( s ), b: ids.get( t )
+					} );
+
+				}
+
+				// extensions: one fat line per leaf, from the leaf's point straight up
+				// the rim to height H (the notebook's linkExtension, which runs from
+				// the leaf's radius out to innerRadius; here every leaf is already on
+				// the rim, so the extension runs along the height axis instead).
+				// Geometry is local to the extension's midpoint, so the mark's
+				// position is that midpoint (on the rim, inside the node box).
+				const extensionMaterial = lineMaterial( { color: 0x000000, opacity: 0.25, linewidth: LINK_PX } );
+
+				const extensions = new THREE.Group();
+				extensions.name = 'extensions';
+				scene.add( extensions );
+
+				const leaves = root.leaves();
+				const rimTop = new Map(); // leaf -> its point on the top rim (R, H, θ)
+
+				for ( const leaf of leaves ) {
+
+					const foot = position.get( leaf );
+					const top = cylinderPoint( angle( leaf ), R, H );
+					rimTop.set( leaf, top );
+
+					const mid = foot.clone().add( top ).multiplyScalar( 0.5 );
+					const line = fatLine( [ foot.clone().sub( mid ), top.clone().sub( mid ) ], { material: extensionMaterial } );
+					line.position.copy( mid );
+					line.name = 'extension ' + ( leaf.data.name || '' );
+					extensions.add( line );
+
+					marks.push( { id: 'e' + marks.length, kind: 'extension', object: line, a: ids.get( leaf ) } );
+
+				}
+
+				/* ---------------- camera ---------------- */
+
+				const nodePoints = marks.filter( m => m.kind === 'node' ).map( m => m.object.position );
+
+				const box = new THREE.Box3();
+				for ( const p of nodePoints ) box.expandByPoint( p );
+
+				// Azimuth 25: at 30-40 one sampled rim leaf (Mycobacterium
+				// paratuberculosis) is hidden behind its 0.36-away neighbour from
+				// camera A at the grazing angle; 20-28 is a clean 20/20 run.
+				const view = { elevation: 35, azimuth: 25, fill: 0.85 };
+				let target = frameCamera( camera, box, { ...view, points: nodePoints } );
+
+				/* ---------------- labels: one Text per leaf (src/labels.js) ----------------
+				   The notebook's: leaves only (191), `name.replace(/_/g, " ")`, at
+				   the rim + 4 rotated to the leaf's angle, flipped for x >= 180 so
+				   every label reads left-to-right with its text outward of the
+				   rim. Lifted to the top of the cylinder: each label lies FLAT in
+				   the horizontal plane at height H (the plane of the clean rim
+				   ring), anchored at the top of its extension pushed outward by
+				   0.4, baseline along the leaf's radius, facing +y. x < 180:
+				   +x = radial outward, anchor start; x >= 180: the notebook's
+				   rotate(180) — +x = radial inward, anchor end — so the text still
+				   sits outward of the rim. Em size: 8 px at the target distance,
+				   capped at the leaf pitch on the rim (2πR / 191 = 0.329), the
+				   notebook's own rule (10 px text at a 10 px pitch). The camera
+				   is then refitted to the labels' far ends, the notebook's 170 px
+				   label margin. */
+
+				const LABEL_PX = 8;
+				const leafPitch = 2 * Math.PI * R / leaves.length;
+				const leafOffset = 0.4;
+				let pxPerUnit, fontSize;
+
+				const fit = () => {
+
+					pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+					fontSize = Math.min( LABEL_PX / pxPerUnit, leafPitch );
+
+				};
+
+				fit();
+
+				const radial = node => new THREE.Vector3( Math.cos( angle( node ) ), 0, Math.sin( angle( node ) ) );
+
+				for ( let i = 0; i < 3; i ++ ) {
+
+					// far end of each leaf label: ~0.5 em per glyph of Roboto
+					const tips = leaves.map( l => rimTop.get( l ).clone()
+						.addScaledVector( radial( l ), leafOffset + 0.5 * fontSize * l.data.label.length ) );
+					target = frameCamera( camera, box, { ...view, points: nodePoints.concat( tips ) } );
+					fit();
+
+				}
+
+				// hierarchyLabels anchors a childless node `start` and offsets it
+				// +leafOffset along its +x, a node with children `end` and
+				// −internalOffset along +x. The notebook's flip for x >= 180 is
+				// exactly the second case with +x = radial inward: anchor end,
+				// pushed outward by internalOffset = leafOffset. So the leaves are
+				// handed over as shims — { data, x } plus an empty `children` for
+				// the flipped half — with their own ids and rim-top positions;
+				// no primitive changed (the force page did the same).
+				const shims = leaves.map( leaf => ( { data: leaf.data, x: leaf.x, children: leaf.x < 180 ? undefined : [] } ) );
+				const shimIds = new Map( shims.map( ( s, i ) => [ s, ids.get( leaves[ i ] ) ] ) );
+				const shimPositions = new Map( shims.map( ( s, i ) => [ s, rimTop.get( leaves[ i ] ) ] ) );
+
+				labels = await hierarchyLabels( { descendants: () => shims }, shimIds, shimPositions, {
+					font: '/examples/fonts/Roboto-Regular.ttf',
+					fontSize,
+					text: 'label',
+					color: 0x333333,
+					outlineWidth: 0.25, outlineColor: 0xffffff,
+					leafOffset, internalOffset: leafOffset,
+					orient: shim => {
+
+						// flat: +x along the radius (outward, or inward for the
+						// flipped half), local up = the horizontal tangent chosen
+						// so the label faces +y (basisQuaternion: +z = +x × up)
+						const out = radial( shim );
+						if ( shim.x >= 180 ) out.negate();
+						const up = new THREE.Vector3( out.z, 0, - out.x );
+						return basisQuaternion( out, up );
+
+					},
+					camera,
+					billboard: false
+				} );
+				scene.add( labels.group );
+
+				/* ---------------- renderer ---------------- */
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'R:', R, 'H:', H, 'maxLength:', maxLength( root ).toFixed( 5 ), 'leafPitch:', leafPitch.toFixed( 3 ),
+					'fontSize:', fontSize.toFixed( 3 ), 'px:', ( fontSize * pxPerUnit ).toFixed( 2 ),
+					'labels:', labels.count, 'flipped:', labels.flipped, 'x>=180:', leaves.filter( l => l.x >= 180 ).length,
+					'nodes:', root.descendants().length, 'links:', root.links().length, 'extensions:', leaves.length );
+
+				attachOrbit( camera, renderer.domElement, target );
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: root.descendants().length, links: root.links().length, extensions: leaves.length, labels: leaves.length },
+					pickables: nodes.children,
+					labels
+				} );
+
+			}
+
+			function animate() {
+
+				labels.update( camera ); // no-op unless billboard: true
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
