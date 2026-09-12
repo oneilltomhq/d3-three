@@ -13,6 +13,11 @@
 //   pickables: optional array of Object3D the picking gate is allowed to hit.
 //             Defaults to the node/cell mark objects, so grids, helpers and
 //             link geometry can never occlude a node (rung 0 director ruling).
+//   labels:   optional `{ count, dump? }` (the object `hierarchyLabels()` in
+//             src/labels.js returns). Labels are not marks; the labels gate
+//             checks `count === nodes`, and `dump()` — one entry per label,
+//             `{ id, text, x, y, z, q: [x,y,z,w], anchorX }` — is written to
+//             the marks JSON as a separate `labels` array (rung 3).
 //
 // The e2e harness then calls `window.d33.report()` after the screenshot and
 // writes `marks/<file>.json` and `gates/<file>.json`. Everything here runs on
@@ -27,7 +32,8 @@ const state = {
 	marks: [],
 	expected: { nodes: 0, links: 0 },
 	target: null,
-	pickables: null
+	pickables: null,
+	labels: null
 };
 
 // gate thresholds
@@ -44,6 +50,7 @@ export function register( options ) {
 	state.expected = options.expected || { nodes: 0, links: 0 };
 	state.target = options.target || null;
 	state.pickables = options.pickables || null;
+	state.labels = options.labels || null;
 
 	window.d33 = api;
 
@@ -214,6 +221,19 @@ function countsGate( marks ) {
 
 }
 
+// Every node carries a label (rung 3). Labels are not marks, so this is a
+// separate count: the number of `Text` members registered vs the node marks.
+function labelsGate( marks ) {
+
+	const nodes = marks.filter( m => m.kind === 'node' ).length;
+	const count = state.labels ? state.labels.count | 0 : 0;
+
+	const out = { count, expectedNodes: nodes, pass: count === nodes };
+	if ( ! state.labels ) out.note = 'no labels registered';
+	return out;
+
+}
+
 function angleGate( positions, cameraA, cameraB ) {
 
 	if ( positions.length === 0 ) {
@@ -348,10 +368,11 @@ const api = {
 				: { pass: false, note: 'no camera registered' },
 			picking: cameraA && cameraB
 				? pickingGate( nodeMarks, positions, cameraA, cameraB )
-				: { pass: false, note: 'no camera registered' }
+				: { pass: false, note: 'no camera registered' },
+			labels: labelsGate( marks )
 		};
 
-		gates.pass = gates.depth.pass && gates.counts.pass && gates.angle.pass && gates.picking.pass;
+		gates.pass = gates.depth.pass && gates.counts.pass && gates.angle.pass && gates.picking.pass && gates.labels.pass;
 
 		return {
 			marks: marks.map( m => {
@@ -363,6 +384,7 @@ const api = {
 				return out;
 
 			} ),
+			labels: state.labels && typeof state.labels.dump === 'function' ? state.labels.dump() : [],
 			expected: { nodes: state.expected.nodes | 0, links: state.expected.links | 0 },
 			target: { x: target.x, y: target.y, z: target.z },
 			gates,
