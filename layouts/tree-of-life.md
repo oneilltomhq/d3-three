@@ -140,12 +140,14 @@ no size, which the tool's presets did not cover).
 
 ## Gaps
 
-- Labels on the half of the rim facing away from the camera are seen from
-  behind (mirrored / upside down in the flat plane) until the director's
-  per-frame flip lands; the static mirror check only corrects left-right.
+- Labels facing away from the camera were seen from behind until the
+  per-frame two-axis flip (src/labels.js `update(camera)`, layouts/cluster.md)
+  landed; every leaf label now reads upright and left-to-right from any
+  orbit. The layout-time quaternions in the marks JSON are the poses at
+  camera A.
 - The notebook's hover (`link--active` up the ancestry) is not lifted.
-- `marks/d3_tree-of-life.json` `expected` carries only `nodes`/`links` (the
-  harness writes `report.expected` as is); `extensions` is in
+- (fixed on merge: `expected` in the marks JSON now carries `cells`,
+  `extensions` and `labels` too.) Previously `extensions` was only in
   `gates/d3_tree-of-life.json` `counts.expectedExtensions`.
 
 ## For three-rs

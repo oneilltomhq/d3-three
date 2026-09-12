@@ -4,8 +4,10 @@
 		"nodes": 0,
 		"links": 0,
 		"cells": 220,
+		"extensions": 0,
 		"labels": 30
 	},
+	"planar": true,
 	"marks": [
 		{
 			"id": "c0",

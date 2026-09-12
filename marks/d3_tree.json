@@ -2,8 +2,12 @@
 	"file": "d3_tree",
 	"expected": {
 		"nodes": 252,
-		"links": 251
+		"links": 251,
+		"cells": 0,
+		"extensions": 0,
+		"labels": 252
 	},
+	"planar": false,
 	"marks": [
 		{
 			"id": "n0",

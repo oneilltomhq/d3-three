@@ -2,8 +2,12 @@
 	"file": "d3_force",
 	"expected": {
 		"nodes": 77,
-		"links": 254
+		"links": 254,
+		"cells": 0,
+		"extensions": 0,
+		"labels": 77
 	},
+	"planar": false,
 	"marks": [
 		{
 			"id": "n0",

@@ -13,8 +13,12 @@
 		"counts": {
 			"nodes": 77,
 			"links": 254,
+			"cells": 0,
+			"extensions": 0,
 			"expectedNodes": 77,
 			"expectedLinks": 254,
+			"expectedCells": 0,
+			"expectedExtensions": 0,
 			"pass": true
 		},
 		"angle": {
@@ -37,6 +41,8 @@
 			"sampledB": 20,
 			"sampleSet": "pickables",
 			"candidates": 77,
+			"eligibleA": 77,
+			"eligibleB": 77,
 			"visibleA": 71,
 			"visibleB": 73,
 			"hitA": 20,
@@ -54,8 +60,12 @@
 	},
 	"expected": {
 		"nodes": 77,
-		"links": 254
+		"links": 254,
+		"cells": 0,
+		"extensions": 0,
+		"labels": 77
 	},
+	"planar": false,
 	"target": {
 		"x": 1.9026635394790703,
 		"y": 0.14156921587022894,

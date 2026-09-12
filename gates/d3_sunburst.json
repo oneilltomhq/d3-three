@@ -15,9 +15,11 @@
 			"nodes": 0,
 			"links": 0,
 			"cells": 251,
+			"extensions": 0,
 			"expectedNodes": 0,
 			"expectedLinks": 0,
 			"expectedCells": 251,
+			"expectedExtensions": 0,
 			"pass": true
 		},
 		"angle": {
@@ -38,8 +40,12 @@
 			"sampled": 20,
 			"sampledA": 20,
 			"sampledB": 20,
+			"sampleSet": "pickables",
+			"candidates": 251,
 			"eligibleA": 251,
 			"eligibleB": 251,
+			"visibleA": 251,
+			"visibleB": 251,
 			"hitA": 20,
 			"hitB": 20,
 			"pickables": 251,
@@ -56,7 +62,9 @@
 	"expected": {
 		"nodes": 0,
 		"links": 0,
-		"cells": 251
+		"cells": 251,
+		"extensions": 0,
+		"labels": 93
 	},
 	"planar": true,
 	"target": {
