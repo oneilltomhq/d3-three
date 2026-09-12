@@ -5,10 +5,14 @@
 //   register( { renderer, scene, camera, marks, expected, target } )
 //
 //   marks:    one entry per datum (HANDOFF §C.11)
-//             { id, kind: 'node' | 'link' | 'cell', object, a?, b? }
+//             { id, kind: 'node' | 'link' | 'cell', object, a?, b?, normal? }
 //             `a`/`b` are the ids of the two endpoint marks of a link.
-//   expected: { nodes, links } straight off the d3 hierarchy
-//             ( root.descendants().length, root.links().length ) (§C.12)
+//             `normal` (unit Vector3 or [x, y, z]) is the outward facing
+//             direction of a solid mark; the picking gate only samples marks
+//             whose normal is absent or faces the camera.
+//   expected: { nodes, links, cells } straight off the d3 hierarchy
+//             ( root.descendants().length, root.links().length ) (§C.12);
+//             `cells` defaults to 0.
 //   target:   optional orbit target; defaults to the centroid of node/cell marks.
 //   pickables: optional array of Object3D the picking gate is allowed to hit.
 //             Defaults to the node/cell mark objects, so grids, helpers and
@@ -25,7 +29,7 @@ const state = {
 	scene: null,
 	camera: null,
 	marks: [],
-	expected: { nodes: 0, links: 0 },
+	expected: { nodes: 0, links: 0, cells: 0 },
 	target: null,
 	pickables: null
 };
@@ -41,7 +45,7 @@ export function register( options ) {
 	state.scene = options.scene || null;
 	state.camera = options.camera || null;
 	state.marks = options.marks || [];
-	state.expected = options.expected || { nodes: 0, links: 0 };
+	state.expected = options.expected || { nodes: 0, links: 0, cells: 0 };
 	state.target = options.target || null;
 	state.pickables = options.pickables || null;
 
@@ -204,12 +208,14 @@ function countsGate( marks ) {
 
 	const nodes = marks.filter( m => m.kind === 'node' ).length;
 	const links = marks.filter( m => m.kind === 'link' ).length;
+	const cells = marks.filter( m => m.kind === 'cell' ).length;
 	const expectedNodes = state.expected.nodes | 0;
 	const expectedLinks = state.expected.links | 0;
+	const expectedCells = state.expected.cells | 0;
 
 	return {
-		nodes, links, expectedNodes, expectedLinks,
-		pass: nodes === expectedNodes && links === expectedLinks
+		nodes, links, cells, expectedNodes, expectedLinks, expectedCells,
+		pass: nodes === expectedNodes && links === expectedLinks && cells === expectedCells
 	};
 
 }
@@ -255,7 +261,47 @@ function hits( raycaster, camera, ndc, object, pickables ) {
 
 }
 
-function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
+// A mark with a `normal` is only sampled from a camera it faces
+// (dot( normal, camera - mark ) > 0): a cell on the far side of a closed shell
+// is rightly occluded by the near side, so it cannot be a picking failure.
+function facesCamera( mark, p, camera ) {
+
+	if ( ! mark.normal ) return true;
+
+	const n = mark.normal.isVector3 ? mark.normal : new THREE.Vector3().fromArray( mark.normal );
+	return n.dot( camera.position.clone().sub( p ) ) > 0;
+
+}
+
+// Sample up to PICK_SAMPLES marks that face `camera`, evenly along the list,
+// and raycast each at its own projected pixel.
+function pickFrom( solidMarks, positions, camera, pickables, raycaster ) {
+
+	const eligible = solidMarks.filter( m => facesCamera( m, positions.get( m.id ), camera ) );
+	const step = Math.max( 1, Math.floor( eligible.length / PICK_SAMPLES ) );
+
+	const misses = [];
+	let sampled = 0, hit = 0;
+
+	for ( let i = 0; i < eligible.length && sampled < PICK_SAMPLES; i += step ) {
+
+		const mark = eligible[ i ];
+		const p = positions.get( mark.id );
+
+		sampled ++;
+
+		const ndc = p.clone().project( camera );
+
+		if ( hits( raycaster, camera, ndc, mark.object, pickables ) ) hit ++;
+		else misses.push( mark.id );
+
+	}
+
+	return { eligible: eligible.length, sampled, hit, misses };
+
+}
+
+function pickingGate( solidMarks, positions, cameraA, cameraB ) {
 
 	const { scene } = state;
 
@@ -264,38 +310,31 @@ function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 	const pickables = state.pickables
 		|| state.marks.filter( m => m.kind !== 'link' ).map( m => m.object );
 
-	if ( nodeMarks.length === 0 || scene === null ) {
+	if ( solidMarks.length === 0 || scene === null ) {
 
-		return { sampled: 0, hitA: 0, hitB: 0, misses: [], pass: false, note: 'no node marks' };
+		return { sampled: 0, sampledA: 0, sampledB: 0, hitA: 0, hitB: 0, misses: [], pass: false, note: 'no node marks' };
 
 	}
 
-	const step = Math.max( 1, Math.floor( nodeMarks.length / PICK_SAMPLES ) );
 	const raycaster = new THREE.Raycaster();
 
-	const misses = [];
-	let sampled = 0, hitA = 0, hitB = 0;
+	const a = pickFrom( solidMarks, positions, cameraA, pickables, raycaster );
+	const b = pickFrom( solidMarks, positions, cameraB, pickables, raycaster );
 
-	for ( let i = 0; i < nodeMarks.length && sampled < PICK_SAMPLES; i += step ) {
+	const misses = [
+		...a.misses.map( id => ( { id, camera: 'a' } ) ),
+		...b.misses.map( id => ( { id, camera: 'b' } ) )
+	];
 
-		const mark = nodeMarks[ i ];
-		const p = positions.get( mark.id );
-
-		sampled ++;
-
-		const ndcA = p.clone().project( cameraA );
-		const ndcB = p.clone().project( cameraB );
-
-		const okA = hits( raycaster, cameraA, ndcA, mark.object, pickables );
-		const okB = hits( raycaster, cameraB, ndcB, mark.object, pickables );
-
-		if ( okA ) hitA ++;
-		if ( okB ) hitB ++;
-		if ( ! okA || ! okB ) misses.push( { id: mark.id, a: okA, b: okB } );
-
-	}
-
-	return { sampled, hitA, hitB, pickables: pickables.length, misses, pass: sampled > 0 && hitA === sampled && hitB === sampled };
+	return {
+		sampled: Math.max( a.sampled, b.sampled ),
+		sampledA: a.sampled, sampledB: b.sampled,
+		eligibleA: a.eligible, eligibleB: b.eligible,
+		hitA: a.hit, hitB: b.hit,
+		pickables: pickables.length, misses,
+		pass: a.sampled > 0 && b.sampled > 0 && a.hit === a.sampled && b.hit === b.sampled,
+		note: a.sampled === 0 || b.sampled === 0 ? 'no eligible marks for a camera' : undefined
+	};
 
 }
 
@@ -328,10 +367,8 @@ const api = {
 		const marks = state.marks;
 		const positions = markPositions();
 
-		const nodeMarks = marks.filter( m => m.kind === 'node' );
 		const solidMarks = marks.filter( m => m.kind !== 'link' ); // nodes + cells
 		const solidPositions = solidMarks.map( m => positions.get( m.id ) );
-		const nodePositions = nodeMarks.map( m => positions.get( m.id ) );
 
 		const cameraA = state.camera;
 		const target = state.target
@@ -344,10 +381,10 @@ const api = {
 			depth: depthGate( solidPositions ),
 			counts: countsGate( marks ),
 			angle: cameraA && cameraB
-				? angleGate( nodePositions, cameraA, cameraB )
+				? angleGate( solidPositions, cameraA, cameraB )
 				: { pass: false, note: 'no camera registered' },
 			picking: cameraA && cameraB
-				? pickingGate( nodeMarks, positions, cameraA, cameraB )
+				? pickingGate( solidMarks, positions, cameraA, cameraB )
 				: { pass: false, note: 'no camera registered' }
 		};
 
@@ -363,7 +400,7 @@ const api = {
 				return out;
 
 			} ),
-			expected: { nodes: state.expected.nodes | 0, links: state.expected.links | 0 },
+			expected: { nodes: state.expected.nodes | 0, links: state.expected.links | 0, cells: state.expected.cells | 0 },
 			target: { x: target.x, y: target.y, z: target.z },
 			gates,
 			env: environment()

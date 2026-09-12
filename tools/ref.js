@@ -94,6 +94,8 @@ await page.goto( `http://localhost:${ port }/examples/` );
 await page.setContent( `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 	html, body { margin: 0; background: #fff; }
 	#chart { display: inline-block; font: 10px sans-serif; }
+	/* a chart that sizes itself only by viewBox (sunburst.v2: autoBox) gets the notebook width */
+	#chart svg:not([width]) { width: 928px; }
 </style></head><body><div id="chart"></div></body></html>` );
 
 // the bundle is an ES module, so re-export it onto window

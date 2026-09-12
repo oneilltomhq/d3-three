@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - sunburst as a sphere</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 sunburst (flare-2.json) lifted to a sphere: angle is longitude, depth is a latitude band, value is thickness</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d33": "/src/d33.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import { register } from 'd33';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+			import { shellSector, spherical } from '/src/shell.js';
+
+			let renderer, scene, camera;
+
+			const R = 10;                              // radius of the sphere every cell's outer face lies on
+			const EXTRUDE = - 1;                       // -1: thickness grows inward from R; +1: outward (see layouts/sunburst.md)
+			const THETA = 150 * Math.PI / 180;         // colatitude of the deepest ring's far edge
+			const BAND_PAD = 0.4 * Math.PI / 180;      // gap between depth bands (outerRadius - 1)
+			const LON_PER_SEGMENT = 3 * Math.PI / 180; // tessellation: one segment per 3 degrees, even count
+			const LAT_SEGMENTS = 4;
+			const MARK_SINK = 1e-4;                    // mark point sits this far inside the outer face
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data + d3 layout (verbatim from the notebook) ---------------- */
+
+				const data = await fetch( '/gallery/hierarchies/sunburst.v2/files/flare-2.json' ).then( r => r.json() );
+
+				const radius = 928 / 2;
+
+				const color = d3.scaleOrdinal( d3.quantize( d3.interpolateRainbow, data.children.length + 1 ) );
+
+				const root = d3.partition()
+					.size( [ 2 * Math.PI, radius ] )
+					( d3.hierarchy( data )
+						.sum( d => d.value )
+						.sort( ( a, b ) => b.value - a.value ) );
+
+				const cells = sphereLayout( root );
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.2 ) );
+
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.8 );
+				sun.position.set( 1, 2, 1.5 ).normalize();
+				scene.add( sun );
+
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				/* ---------------- marks: one Mesh per cell ---------------- */
+
+				const group = new THREE.Group();
+				group.name = 'cells';
+				scene.add( group );
+
+				const materials = new Map();
+				const marks = [];
+
+				for ( const cell of cells ) {
+
+					let top = cell.node;
+					while ( top.depth > 1 ) top = top.parent;
+					const key = top.data.name;
+
+					if ( ! materials.has( key ) ) {
+
+						// the notebook's fill-opacity 0.6 over white, baked into an opaque
+						// colour: a transparent shell shows its own far side through the
+						// near side and the rings stop reading.
+						materials.set( key, new THREE.MeshStandardNodeMaterial( {
+							color: new THREE.Color( d3.interpolateRgb( color( key ), '#ffffff' )( 0.4 ) ),
+							roughness: 0.7, metalness: 0.0
+						} ) );
+
+					}
+
+					// The mark point is the centre of the cell's outer face (a vertex of
+					// the outer patch, since the segment counts are even), a hair inside
+					// so a grazing pick ray enters this cell's own face first. The
+					// geometry is built around it, so getWorldPosition() is that point.
+					const { geometry, centroid, normal } = shellSector(
+						cell.lon0, cell.lon1, cell.colat0, cell.colat1, cell.r0, cell.r1,
+						{ lon: cell.lonSegments, lat: LAT_SEGMENTS },
+						spherical( cell.r1 - MARK_SINK, ( cell.colat0 + cell.colat1 ) / 2, ( cell.lon0 + cell.lon1 ) / 2 )
+					);
+
+					const mesh = new THREE.Mesh( geometry, materials.get( key ) );
+					mesh.position.copy( centroid );
+					mesh.name = cell.node.data.name;
+					group.add( mesh );
+
+					marks.push( { id: 'c' + marks.length, kind: 'cell', object: mesh, normal } );
+
+				}
+
+				// a faint inner sphere so the hole at the south pole has something to
+				// look at; not a mark, not pickable. Only when cells grow outward:
+				// inward cells reach down to R - h_max and would cut through it.
+				if ( EXTRUDE > 0 ) {
+
+					const inner = new THREE.Mesh(
+						new THREE.SphereGeometry( 0.98 * R, 48, 32 ),
+						new THREE.MeshStandardNodeMaterial( { color: 0xdddddd, roughness: 0.9, metalness: 0.0 } )
+					);
+					inner.name = 'inner';
+					scene.add( inner );
+
+				}
+
+				/* ---------------- camera + renderer ---------------- */
+
+				const points = marks.map( m => m.object.position );
+
+				const box = new THREE.Box3();
+				for ( const p of points ) box.expandByPoint( p );
+
+				// Azimuth a puts camera A at longitude 90 - a; 150 looks at longitude
+				// 300, where query / analytics / scale / data meet, and camera B
+				// (rotated +90) at 210, over util and animate — both see several
+				// packages, not vis alone (which spans 0..163).
+				const target = frameCamera( camera, box, {
+					elevation: 35, azimuth: 150, fill: 0.85, points
+				} );
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'cells:', cells.length, 'height:', root.height, 'R:', R );
+
+				attachOrbit( camera, renderer.domElement, target );
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: 0, links: 0, cells: root.descendants().filter( d => d.depth ).length },
+					pickables: group.children
+				} );
+
+			}
+
+			/* ---------------- the sphere (layouts/sunburst.md) ----------------
+			   d3.partition decides every cell's longitude span (x0, x1, padded as
+			   the notebook's d3.arc pads it), its depth and its value. The sphere
+			   adds: a colatitude band per depth, from the north pole (root) down
+			   to THETA, and a radial thickness that grows with the square root of
+			   the cell's share of the total value. */
+
+			function sphereLayout( root ) {
+
+				const H = root.height;
+				const cells = [];
+
+				for ( const node of root.descendants() ) {
+
+					if ( node.depth === 0 ) continue;
+
+					// the notebook's padAngle, split half on each side as d3.arc does
+					const pad = Math.min( ( node.x1 - node.x0 ) / 2, 0.005 );
+					const lon0 = node.x0 + pad / 2;
+					const lon1 = node.x1 - pad / 2;
+
+					const colat0 = THETA * ( node.depth - 1 ) / H;
+					const colat1 = THETA * node.depth / H - BAND_PAD;
+
+					const h = 0.02 * R + 0.6 * R * Math.sqrt( node.value / root.value );
+
+					cells.push( {
+						node, lon0, lon1, colat0, colat1,
+						r0: EXTRUDE > 0 ? R : R - h,
+						r1: EXTRUDE > 0 ? R + h : R,
+						lonSegments: 2 * Math.max( 1, Math.ceil( ( lon1 - lon0 ) / LON_PER_SEGMENT / 2 ) )
+					} );
+
+				}
+
+				return cells;
+
+			}
+
+			function animate() {
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
