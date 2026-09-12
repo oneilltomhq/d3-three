@@ -1,0 +1,86 @@
+{
+	"file": "d3_chord",
+	"gates": {
+		"depth": {
+			"extents": [
+				14.930545907232064,
+				0.15,
+				14.92061479244601
+			],
+			"ratio": 0.010046518120100547,
+			"pass": true,
+			"note": "planar by ruling"
+		},
+		"counts": {
+			"nodes": 0,
+			"links": 0,
+			"cells": 14,
+			"extensions": 0,
+			"expectedNodes": 0,
+			"expectedLinks": 0,
+			"expectedCells": 14,
+			"expectedExtensions": 0,
+			"pass": true
+		},
+		"angle": {
+			"a": {
+				"width": 0.49738139101257056,
+				"height": 0.5985099137368013,
+				"area": 0.29768769342922385
+			},
+			"b": {
+				"width": 0.5681528043903286,
+				"height": 0.6968857364177482,
+				"area": 0.39593758548536295
+			},
+			"threshold": 0.01,
+			"pass": true
+		},
+		"picking": {
+			"sampled": 13,
+			"sampledA": 13,
+			"sampledB": 13,
+			"sampleSet": "pickables",
+			"candidates": 14,
+			"eligibleA": 14,
+			"eligibleB": 14,
+			"visibleA": 13,
+			"visibleB": 13,
+			"hitA": 13,
+			"hitB": 13,
+			"pickables": 14,
+			"misses": [],
+			"pass": true
+		},
+		"labels": {
+			"count": 26,
+			"expectedNodes": 26,
+			"pass": true
+		},
+		"pass": true
+	},
+	"expected": {
+		"nodes": 0,
+		"links": 0,
+		"cells": 14,
+		"extensions": 0,
+		"labels": 26
+	},
+	"planar": true,
+	"target": {
+		"x": -0.2351221468212753,
+		"y": -1.4982915042325333,
+		"z": 2.2838125749917935
+	},
+	"env": {
+		"backend": "WebGPUBackend",
+		"isWebGPUBackend": true,
+		"hasNavigatorGPU": true,
+		"adapterInfo": {
+			"vendor": "google",
+			"architecture": "swiftshader",
+			"device": "",
+			"description": ""
+		}
+	}
+}

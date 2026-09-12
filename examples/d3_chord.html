@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - chord</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 chord diagram II (hair colour matrix), the notebook's chart flat in the 3D world: 4 group arcs and 10 ribbons as thin slabs</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import { register } from 'd33';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+			import { fatLine, lineMaterial } from '/src/link.js';
+			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
+
+			let renderer, scene, camera, labels;
+
+			// The notebook's svg is 640 px across; the chart is 20 world units
+			// across, so one notebook px is S world units. Every px number the
+			// notebook states is multiplied by S.
+			const WIDTH = 640;
+			const S = 20 / WIDTH;
+			const OUTER_RADIUS = ( WIDTH * 0.5 - 30 );        // 290 px, the notebook's outerRadius
+			const INNER_RADIUS = OUTER_RADIUS - 20;            // 270 px
+			const ARC_THICKNESS = 0.015 * 20;                  // 0.3: group arcs, as the sunburst's slabs
+			const RIBBON_THICKNESS = 0.15;                     // ribbons, half that
+			const RIBBON_STEP = 0.004;                         // each later ribbon sits this much higher (draw order = stacking order)
+			const LABEL_PX = 10;                               // the notebook's font-size (tick labels)
+			const NAME_PX = 12;                                // group names (not in the notebook's svg, see the note)
+			const TICK_LENGTH = 6;                             // px, the notebook's x2
+			const TICK_TEXT_X = 8;                             // px, the notebook's text x
+			const NAME_X = 36;                                 // px outside the outer radius, clear of the widest tick label
+			const LABEL_LIFT = 0.01;                           // labels and ticks sit this far above the arc tops
+			const ARC_STEP = 2 * Math.PI / 180;                // one outline segment per 2 degrees of arc
+			const BEZIER_SEGMENTS = 32;                        // per quadratic ribbon edge
+			const UP = new THREE.Vector3( 0, 1, 0 );
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data + d3 layout (verbatim from the notebook) ---------------- */
+
+				const data = Object.assign( [
+					[ 11975, 5871, 8916, 2868 ],
+					[ 1951, 10048, 2060, 6171 ],
+					[ 8010, 16145, 8090, 8045 ],
+					[ 1013, 990, 940, 6907 ]
+				], {
+					names: [ 'black', 'blond', 'brown', 'red' ],
+					colors: [ '#000000', '#ffdd89', '#957244', '#f26223' ]
+				} );
+
+				const { names, colors } = data;
+				const sum = d3.sum( data.flat() );
+				const tickStep = d3.tickStep( 0, sum, 100 );
+				const tickStepMajor = d3.tickStep( 0, sum, 20 );
+				const formatValue = d3.formatPrefix( ',.0', tickStep );
+
+				const chord = d3.chord()
+					.padAngle( 20 / INNER_RADIUS )
+					.sortSubgroups( d3.descending );
+
+				const chords = chord( data );
+				const groups = chords.groups;
+
+				function groupTicks( d, step ) {
+
+					const k = ( d.endAngle - d.startAngle ) / d.value;
+					return d3.range( 0, d.value, step ).map( value => ( { value, angle: value * k + d.startAngle } ) );
+
+				}
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.2 ) );
+
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.6 );
+				sun.position.set( 1, 2, 1.5 ).normalize();
+				scene.add( sun );
+
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				/* ---------------- marks: one Mesh per group arc, one per ribbon ----------------
+				   Notebook angle a is 0 at 12 o'clock and runs clockwise seen from
+				   above: notebook (x, y) = (r sin a, -r cos a) becomes world (x, z).
+				   Every outline is built in the shape's (u, v) = world (x, -z),
+				   extruded along +y, then moved into local coordinates around its
+				   mark point so the mesh's world position IS the mark. */
+
+				const cells = new THREE.Group();
+				cells.name = 'cells';
+				scene.add( cells );
+
+				const marks = [];
+				const point = ( rPx, a, y ) => new THREE.Vector3( rPx * S * Math.sin( a ), y, - rPx * S * Math.cos( a ) );
+
+				// group arcs: d3.arc innerRadius/outerRadius, no pad, colours[index] opaque
+				for ( const g of groups ) {
+
+					const am = ( g.startAngle + g.endAngle ) / 2;
+					const centre = point( ( INNER_RADIUS + OUTER_RADIUS ) / 2, am, ARC_THICKNESS );
+
+					const material = new THREE.MeshStandardNodeMaterial( {
+						color: new THREE.Color( colors[ g.index ] ), roughness: 0.7, metalness: 0.0
+					} );
+
+					const mesh = new THREE.Mesh( slab( arcOutline( g.startAngle, g.endAngle ), 0, ARC_THICKNESS, centre ), material );
+					mesh.position.copy( centre );
+					mesh.name = `${ g.value.toLocaleString( 'en-US' ) } ${ names[ g.index ] }`; // the notebook's <title>
+					cells.add( mesh );
+
+					marks.push( { id: 'g' + g.index, kind: 'cell', object: mesh, normal: [ 0, 1, 0 ] } );
+
+				}
+
+				// ribbons: d3.ribbon radius innerRadius, colours[target.index] at
+				// fill-opacity 0.7 over the white page, baked into an opaque colour.
+				// Later ribbons are drawn on top in the notebook; here each sits
+				// RIBBON_STEP higher than the one before, so the same ribbon wins
+				// where two overlap (and coplanar tops never z-fight).
+				const ribbonMaterials = new Map();
+
+				chords.forEach( ( d, k ) => {
+
+					const key = d.target.index;
+
+					if ( ! ribbonMaterials.has( key ) ) {
+
+						ribbonMaterials.set( key, new THREE.MeshStandardNodeMaterial( {
+							color: new THREE.Color( d3.interpolateRgb( colors[ key ], '#ffffff' )( 0.3 ) ),
+							roughness: 0.7, metalness: 0.0
+						} ) );
+
+					}
+
+					const base = k * RIBBON_STEP;
+					const top = base + RIBBON_THICKNESS;
+
+					// Mark point: on the top face, on the ribbon's mid-line (the
+					// quadratic Bezier through the centre from the source arc's
+					// middle to the target arc's middle) a quarter of the way
+					// along, so it is well inside the ribbon near its source end;
+					// a self-chord (a petal) takes 3/4 of the radius along its
+					// mid-angle instead.
+					const ps = point( INNER_RADIUS, ( d.source.startAngle + d.source.endAngle ) / 2, 0 );
+					const pt = point( INNER_RADIUS, ( d.target.startAngle + d.target.endAngle ) / 2, 0 );
+					const centre = d.source === d.target
+						? ps.multiplyScalar( 0.75 )
+						: ps.multiplyScalar( 0.5625 ).addScaledVector( pt, 0.0625 );
+					centre.y = top;
+
+					const mesh = new THREE.Mesh( slab( ribbonOutline( d ), base, top, centre ), ribbonMaterials.get( key ) );
+					mesh.position.copy( centre );
+					mesh.name = `${ d.source.value.toLocaleString( 'en-US' ) } ${ names[ d.source.index ] } → ${ names[ d.target.index ] }`;
+					cells.add( mesh );
+
+					marks.push( { id: 'r' + k, kind: 'cell', object: mesh, normal: [ 0, 1, 0 ], a: d.source.index, b: d.target.index } );
+
+				} );
+
+				/* ---------------- ticks (not marks): one Line per tick, as the notebook's <line> ----------------
+				   rotate(angle - 90) translate(outerRadius, 0), x2 = 6, currentColor. */
+
+				const ticks = new THREE.Group();
+				ticks.name = 'ticks';
+				scene.add( ticks );
+
+				const tickMaterial = lineMaterial( { color: 0x000000, linewidth: 1 } );
+				const tickY = ARC_THICKNESS + LABEL_LIFT;
+				let tickCount = 0;
+
+				for ( const g of groups ) {
+
+					for ( const t of groupTicks( g, tickStep ) ) {
+
+						const line = fatLine( [ point( OUTER_RADIUS, t.angle, tickY ), point( OUTER_RADIUS + TICK_LENGTH, t.angle, tickY ) ], { material: tickMaterial } );
+						line.name = 'tick ' + t.value;
+						ticks.add( line );
+						tickCount ++;
+
+					}
+
+				}
+
+				/* ---------------- camera ----------------
+				   Fitted to every slab's world bounding-box corners plus the tick
+				   ends, then refitted with every label's corners. Azimuth 25 puts
+				   camera A on the +z side, so screen-up is roughly -z: the
+				   notebook's 12 o'clock (angle 0) is at the top of the frame. */
+
+				const cellPoints = [];
+				const _c = new THREE.Vector3();
+
+				for ( const mesh of cells.children ) {
+
+					mesh.geometry.computeBoundingBox();
+					const bb = mesh.geometry.boundingBox;
+
+					for ( let k = 0; k < 8; k ++ ) {
+
+						_c.set( k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z );
+						cellPoints.push( _c.clone().add( mesh.position ) );
+
+					}
+
+				}
+
+				for ( const g of groups ) for ( const t of groupTicks( g, tickStep ) ) cellPoints.push( point( OUTER_RADIUS + TICK_LENGTH, t.angle, tickY ) );
+
+				const box = new THREE.Box3();
+				for ( const p of cellPoints ) box.expandByPoint( p );
+
+				const frame = points => frameCamera( camera, box, { elevation: 50, azimuth: 25, fill: 0.85, points } );
+
+				let target = frame( cellPoints );
+
+				/* ---------------- labels (src/labels.js) ----------------
+				   The notebook's tick labels: every tick whose value is a multiple
+				   of tickStepMajor, `formatPrefix(",.0", tickStep)` of the value, at
+				   x = 8 outside the outer radius, dy .35em (anchorY middle), 10 px;
+				   `rotate(angle - 90) translate(outerRadius, 0)` then on the left
+				   half (angle > π) `rotate(180) translate(-16)` with text-anchor
+				   end — i.e. the block always occupies [R + 8, R + 8 + w] along the
+				   radial and reads outward on the right half, inward on the left.
+				   Plus one name per group at its mid-angle, R + 36 outside, 12 px,
+				   same turn rule (the notebook keeps its names in <title> tooltips
+				   only; a static render needs them on the rim). All lie in the
+				   plane LABEL_LIFT above the arc tops. */
+
+				const wrappers = [];
+				const labelIds = new Map();
+				const labelPositions = new Map();
+				const labelSizes = new Map();
+				let turned = 0;
+
+				const addLabel = ( id, text, angle, rPx, px ) => {
+
+					const p = point( rPx, angle, ARC_THICKNESS + LABEL_LIFT );
+					const radial = new THREE.Vector3( Math.sin( angle ), 0, - Math.cos( angle ) );
+					let outward = ! ( angle > Math.PI ); // the notebook's rule
+					let dir = outward ? radial.clone() : radial.clone().negate();
+
+					// The notebook's left-half turn exists so its text reads
+					// left-to-right; from an oblique camera the same intent is "the
+					// baseline projects rightward from camera A". Where the two
+					// disagree (labels near 12 and 6 o'clock) turn the baseline about
+					// the face normal and swap the anchor, so the block stays put and
+					// labels.js's own mirror check (a turn about the label's up axis,
+					// which would show an up-facing label's back) finds nothing to do.
+					const right = p.clone().add( dir ).project( camera ).x;
+					const left = p.clone().sub( dir ).project( camera ).x;
+					if ( right < left ) { dir.negate(); outward = ! outward; turned ++; }
+
+					// hierarchyLabels anchors a leaf `start` (+x from the point) and an
+					// internal node `end` (-x): outward-reading labels are leaves.
+					const w = outward ? { data: { name: text } } : { data: { name: text }, children: [] };
+					w.q = basisQuaternion( dir, UP.clone().cross( dir ) );
+					wrappers.push( w );
+					labelIds.set( w, id );
+					labelPositions.set( w, p );
+					labelSizes.set( w, px );
+
+				};
+
+				for ( const g of groups ) {
+
+					for ( const t of groupTicks( g, tickStep ) ) {
+
+						if ( t.value % tickStepMajor === 0 ) addLabel( `t${ g.index }-${ t.value }`, formatValue( t.value ), t.angle, OUTER_RADIUS + TICK_TEXT_X, LABEL_PX );
+
+					}
+
+				}
+
+				for ( const g of groups ) addLabel( 'n' + g.index, names[ g.index ], ( g.startAngle + g.endAngle ) / 2, OUTER_RADIUS + NAME_X, NAME_PX );
+
+				labels = await hierarchyLabels( { descendants: () => wrappers }, labelIds, labelPositions, {
+					font: '/examples/fonts/Roboto-Regular.ttf',
+					fontSize: LABEL_PX * S,
+					color: 0x333333,
+					outlineWidth: 0.25, outlineColor: 0xffffff,
+					leafOffset: 0, internalOffset: 0,
+					orient: w => w.q,
+					camera,
+					billboard: false
+				} );
+
+				// the group names are larger than the tick labels: set per Text, then one more sync()
+				for ( const l of labels.labels ) l.object.fontSize = labelSizes.get( l.node ) * S;
+				labels.batched.sync();
+				scene.add( labels.group );
+
+				// labels.js computed each label's four per-frame poses from the
+				// block width at the first sync(); the names are wider now, so
+				// rebuild them the same way (see the `poses` comment in labels.js)
+				{
+
+					const turns = [ null,
+						new THREE.Quaternion().setFromAxisAngle( new THREE.Vector3( 0, 1, 0 ), Math.PI ),
+						new THREE.Quaternion().setFromAxisAngle( new THREE.Vector3( 1, 0, 0 ), Math.PI ),
+						new THREE.Quaternion().setFromAxisAngle( new THREE.Vector3( 0, 0, 1 ), Math.PI ) ];
+
+					for ( const l of labels.labels ) {
+
+						const bb = l.object.textRenderInfo.blockBounds;
+						const dx = new THREE.Vector3( 1, 0, 0 ).applyQuaternion( l.baseQ ).multiplyScalar( bb[ 0 ] + bb[ 2 ] );
+						const dy = new THREE.Vector3( 0, 1, 0 ).applyQuaternion( l.baseQ ).multiplyScalar( bb[ 1 ] + bb[ 3 ] );
+
+						l.poses = turns.map( ( turn, k ) => {
+
+							const q = turn ? l.baseQ.clone().multiply( turn ) : l.baseQ.clone();
+							const p = l.anchor.clone();
+							if ( k & 1 ) p.add( dx );
+							if ( k & 2 ) p.add( dy );
+							return { q, p };
+
+						} );
+
+					}
+
+				}
+
+				// refit with the label corners in the frame
+				const labelCorners = labels.labels.flatMap( l => {
+
+					const bb = l.object.textRenderInfo.blockBounds;
+					l.object.updateMatrixWorld( true );
+					return [ [ bb[ 0 ], bb[ 1 ] ], [ bb[ 2 ], bb[ 1 ] ], [ bb[ 0 ], bb[ 3 ] ], [ bb[ 2 ], bb[ 3 ] ] ]
+						.map( ( [ x, y ] ) => new THREE.Vector3( x, y, 0 ).applyMatrix4( l.object.matrixWorld ) );
+
+				} );
+
+				target = frame( cellPoints.concat( labelCorners ) );
+
+				/* ---------------- renderer ---------------- */
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'groups:', groups.length, 'chords:', chords.length, 'ticks:', tickCount,
+					'labels:', labels.count, 'turned:', turned, 'flipped:', labels.flipped,
+					'em px at 400x250:', ( LABEL_PX * S * pxPerUnit ).toFixed( 2 ) );
+
+				const controls = attachOrbit( camera, renderer.domElement, target );
+				window.d33dev = { camera, controls, labels };
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: 0, links: 0, cells: groups.length + chords.length, labels: wrappers.length },
+					pickables: cells.children,
+					labels,
+					planar: true
+				} );
+
+			}
+
+			/* ---------------- outlines, in the shape's (u, v) = world (x, -z) ----------------
+			   A notebook point at angle a and radius r (px) is (r sin a, r cos a) here. */
+
+			function shapePoint( rPx, a ) {
+
+				return new THREE.Vector2( rPx * S * Math.sin( a ), rPx * S * Math.cos( a ) );
+
+			}
+
+			function arcPoints( pts, rPx, a, b ) {
+
+				const n = Math.max( 1, Math.ceil( Math.abs( b - a ) / ARC_STEP ) );
+				for ( let i = 0; i <= n; i ++ ) pts.push( shapePoint( rPx, a + ( b - a ) * i / n ) );
+
+			}
+
+			// d3.ribbon's quadratic curve through the centre: (1-t)^2 P0 + t^2 P2
+			function bezierPoints( pts, p0, p2 ) {
+
+				for ( let i = 1; i <= BEZIER_SEGMENTS; i ++ ) {
+
+					const t = i / BEZIER_SEGMENTS;
+					pts.push( new THREE.Vector2( ( 1 - t ) * ( 1 - t ) * p0.x + t * t * p2.x, ( 1 - t ) * ( 1 - t ) * p0.y + t * t * p2.y ) );
+
+				}
+
+			}
+
+			// the notebook's d3.arc: outer arc forward, inner arc back
+			function arcOutline( a0, a1 ) {
+
+				const pts = [];
+				arcPoints( pts, OUTER_RADIUS, a0, a1 );
+				arcPoints( pts, INNER_RADIUS, a1, a0 );
+				return pts;
+
+			}
+
+			// the notebook's d3.ribbon at radius innerRadius: source arc, quadratic
+			// through the centre to the target's start, target arc, quadratic back;
+			// a self-chord (source === target) skips the middle two, as d3 does
+			function ribbonOutline( d ) {
+
+				const r = INNER_RADIUS;
+				const { source: s, target: t } = d;
+				const pts = [];
+
+				arcPoints( pts, r, s.startAngle, s.endAngle );
+
+				if ( s.startAngle !== t.startAngle || s.endAngle !== t.endAngle ) {
+
+					bezierPoints( pts, shapePoint( r, s.endAngle ), shapePoint( r, t.startAngle ) );
+					arcPoints( pts, r, t.startAngle, t.endAngle );
+
+				}
+
+				bezierPoints( pts, pts[ pts.length - 1 ], shapePoint( r, s.startAngle ) );
+				pts.pop(); // closes on the first point
+
+				return pts;
+
+			}
+
+			// Extrude an outline from y = y0 to y = y1 and express it in local
+			// coordinates around `centre` (the mark point, on the top face).
+			function slab( pts, y0, y1, centre ) {
+
+				const geometry = new THREE.ExtrudeGeometry( new THREE.Shape( pts ), { depth: y1 - y0, bevelEnabled: false } );
+
+				// (u, v, w) -> (u, w, -v): extrusion along +y, shape v -> world -z
+				geometry.rotateX( - Math.PI / 2 );
+				geometry.translate( - centre.x, y0 - centre.y, - centre.z );
+				geometry.computeVertexNormals();
+
+				return geometry;
+
+			}
+
+			function animate() {
+
+				labels.update( camera ); // per-frame mirror flip (plane fixed)
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
