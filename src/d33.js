@@ -8,9 +8,14 @@
 //             { id, kind: 'node' | 'link' | 'cell' | 'extension', object, a?, b? }
 //             `a`/`b` are the ids of the two endpoint marks of a link;
 //             an `extension` (tree-of-life's leaf link extension) carries `a`.
-//   expected: { nodes, links, extensions? } straight off the d3 hierarchy
-//             ( root.descendants().length, root.links().length ) (§C.12)
+//   expected: { nodes, links, cells?, extensions?, labels? } straight off the
+//             d3 hierarchy ( root.descendants().length, root.links().length )
+//             (§C.12); `cells` and `extensions` default to 0; `labels`
+//             defaults to `nodes` (sunburst, treemap, tree-of-life label subsets).
 //   target:   optional orbit target; defaults to the centroid of node/cell marks.
+//   planar:   optional; true for a 2D chart rendered flat in the 3D world
+//             (director ruling, handoff/rung0/LOG.md): the depth gate still
+//             reports its ratio but passes with note 'planar by ruling'.
 //   normal:   optional on a mark (unit Vector3 or [x,y,z]); the picking gate
 //             samples a mark from a camera only if it faces it
 //             (dot(normal, camera − mark) > 0). Absent = always eligible.
@@ -37,7 +42,8 @@ const state = {
 	expected: { nodes: 0, links: 0 },
 	target: null,
 	pickables: null,
-	labels: null
+	labels: null,
+	planar: false
 };
 
 // gate thresholds
@@ -53,6 +59,7 @@ export function register( options ) {
 	state.marks = options.marks || [];
 	state.expected = options.expected || { nodes: 0, links: 0 };
 	state.target = options.target || null;
+	state.planar = options.planar === true;
 	state.pickables = options.pickables || null;
 	state.labels = options.labels || null;
 
@@ -207,6 +214,8 @@ function depthGate( positions ) {
 	const max = Math.max( ...extents );
 	const ratio = max > 0 ? Math.min( ...extents ) / max : 0;
 
+	if ( state.planar ) return { extents, ratio, pass: true, note: 'planar by ruling' };
+
 	return { extents, ratio, pass: ratio >= DEPTH_RATIO };
 
 }
@@ -215,15 +224,17 @@ function countsGate( marks ) {
 
 	const nodes = marks.filter( m => m.kind === 'node' ).length;
 	const links = marks.filter( m => m.kind === 'link' ).length;
+	const cells = marks.filter( m => m.kind === 'cell' ).length;
 	const expectedNodes = state.expected.nodes | 0;
 	const expectedLinks = state.expected.links | 0;
+	const expectedCells = state.expected.cells | 0;
 	// `extension` marks (tree-of-life): one per leaf, counted only when the page declares them
 	const extensions = marks.filter( m => m.kind === 'extension' ).length;
 	const expectedExtensions = state.expected.extensions | 0;
 
 	return {
-		nodes, links, extensions, expectedNodes, expectedLinks, expectedExtensions,
-		pass: nodes === expectedNodes && links === expectedLinks && extensions === expectedExtensions
+		nodes, links, cells, extensions, expectedNodes, expectedLinks, expectedCells, expectedExtensions,
+		pass: nodes === expectedNodes && links === expectedLinks && cells === expectedCells && extensions === expectedExtensions
 	};
 
 }
@@ -308,7 +319,7 @@ function unoccluded( raycaster, camera, p, object, pickables ) {
 
 }
 
-function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
+function pickingGate( solidMarks, positions, cameraA, cameraB ) {
 
 	const { scene } = state;
 
@@ -317,7 +328,7 @@ function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 	const pickables = state.pickables
 		|| state.marks.filter( m => m.kind !== 'link' ).map( m => m.object );
 
-	if ( nodeMarks.length === 0 || scene === null ) {
+	if ( solidMarks.length === 0 || scene === null ) {
 
 		return { sampled: 0, hitA: 0, hitB: 0, misses: [], pass: false, note: 'no node marks' };
 
@@ -341,8 +352,8 @@ function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 	// leaves only (pack: containers are translucent, leaves are the targets)
 	// gets leaves sampled. Falls back to every node mark if none is pickable.
 	const pickableSet = new Set( pickables );
-	const candidates = nodeMarks.filter( m => pickableSet.has( m.object ) );
-	const samples = candidates.length > 0 ? candidates : nodeMarks;
+	const candidates = solidMarks.filter( m => pickableSet.has( m.object ) );
+	const samples = candidates.length > 0 ? candidates : solidMarks;
 
 	// Per camera: the facing (normal) filter, then the visibility pre-pass
 	// over every remaining candidate, then up to PICK_SAMPLES of the visible
@@ -366,17 +377,19 @@ function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 
 		}
 
-		return { picked, visible: visible.size };
+		return { picked, visible: visible.size, eligible: eligible.length };
 
 	};
 
 	const misses = [];
 	const sampledIds = new Set();
+	const eligible = {};
 	let hitA = 0, hitB = 0, visibleA = 0, visibleB = 0;
 
 	const cast = ( camera, key ) => {
 
-		const { picked, visible } = sampleFrom( camera );
+		const { picked, visible, eligible: n } = sampleFrom( camera );
+		eligible[ key ] = n;
 		key === 'a' ? visibleA = visible : visibleB = visible;
 
 		for ( const mark of picked ) {
@@ -400,7 +413,7 @@ function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 
 	return {
 		sampled, sampledA, sampledB, sampleSet: candidates.length > 0 ? 'pickables' : 'nodes', candidates: samples.length,
-		visibleA, visibleB, hitA, hitB, pickables: pickables.length, misses,
+		eligibleA: eligible.a, eligibleB: eligible.b, visibleA, visibleB, hitA, hitB, pickables: pickables.length, misses,
 		pass: sampledA > 0 && sampledB > 0 && hitA === sampledA && hitB === sampledB
 	};
 
@@ -435,10 +448,8 @@ const api = {
 		const marks = state.marks;
 		const positions = markPositions();
 
-		const nodeMarks = marks.filter( m => m.kind === 'node' );
 		const solidMarks = marks.filter( m => m.kind !== 'link' ); // nodes + cells
 		const solidPositions = solidMarks.map( m => positions.get( m.id ) );
-		const nodePositions = nodeMarks.map( m => positions.get( m.id ) );
 
 		const cameraA = state.camera;
 		const target = state.target
@@ -451,10 +462,10 @@ const api = {
 			depth: depthGate( solidPositions ),
 			counts: countsGate( marks ),
 			angle: cameraA && cameraB
-				? angleGate( nodePositions, cameraA, cameraB )
+				? angleGate( solidPositions, cameraA, cameraB )
 				: { pass: false, note: 'no camera registered' },
 			picking: cameraA && cameraB
-				? pickingGate( nodeMarks, positions, cameraA, cameraB )
+				? pickingGate( solidMarks, positions, cameraA, cameraB )
 				: { pass: false, note: 'no camera registered' },
 			labels: labelsGate( marks )
 		};
@@ -472,7 +483,12 @@ const api = {
 
 			} ),
 			labels: state.labels && typeof state.labels.dump === 'function' ? state.labels.dump() : [],
-			expected: { nodes: state.expected.nodes | 0, links: state.expected.links | 0 },
+			expected: {
+				nodes: state.expected.nodes | 0, links: state.expected.links | 0,
+				cells: state.expected.cells | 0, extensions: state.expected.extensions | 0,
+				labels: state.expected.labels !== undefined ? state.expected.labels | 0 : state.expected.nodes | 0
+			},
+			planar: state.planar,
 			target: { x: target.x, y: target.y, z: target.z },
 			gates,
 			env: environment()

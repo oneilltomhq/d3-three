@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - sunburst</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 sunburst (flare-2.json), the notebook's chart as a flat disc of thin slabs in the 3D world</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import { register } from 'd33';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
+
+			let renderer, scene, camera, labels;
+
+			// The notebook's chart is 928 px across (radius 464); the disc is 20
+			// world units across, so one notebook px is S world units. Every
+			// number below that the notebook states in px is multiplied by S.
+			const RADIUS = 928 / 2;
+			const S = 20 / 928;
+			const THICKNESS = 0.015 * 20;   // slab thickness: 1.5 % of the diameter
+			const LABEL_PX = 10;            // the notebook's font-size
+			const LABEL_LIFT = 0.01;        // labels sit this far above the top face
+			const ARC_STEP = 2 * Math.PI / 180; // one outline segment per 2 degrees of arc
+			const UP = new THREE.Vector3( 0, 1, 0 );
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data + d3 layout (verbatim from the notebook) ---------------- */
+
+				const data = await fetch( '/gallery/hierarchies/sunburst.v2/files/flare-2.json' ).then( r => r.json() );
+
+				const color = d3.scaleOrdinal( d3.quantize( d3.interpolateRainbow, data.children.length + 1 ) );
+
+				const root = d3.partition()
+					.size( [ 2 * Math.PI, RADIUS ] )
+					( d3.hierarchy( data )
+						.sum( d => d.value )
+						.sort( ( a, b ) => b.value - a.value ) );
+
+				const visible = root.descendants().filter( d => d.depth && d.x1 - d.x0 > 0.001 && d.y1 > d.y0 );
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.2 ) );
+
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.6 );
+				sun.position.set( 1, 2, 1.5 ).normalize();
+				scene.add( sun );
+
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				/* ---------------- marks: one Mesh per cell ---------------- */
+
+				const group = new THREE.Group();
+				group.name = 'cells';
+				scene.add( group );
+
+				const materials = new Map();
+				const marks = [];
+				const ids = new Map();
+				const markPoint = new Map();
+
+				for ( const node of visible ) {
+
+					let top = node;
+					while ( top.depth > 1 ) top = top.parent;
+					const key = top.data.name;
+
+					if ( ! materials.has( key ) ) {
+
+						// the notebook's fill-opacity 0.6 over the white page, baked
+						// into an opaque colour so the slabs' edges stay clean
+						materials.set( key, new THREE.MeshStandardNodeMaterial( {
+							color: new THREE.Color( d3.interpolateRgb( color( key ), '#ffffff' )( 0.4 ) ),
+							roughness: 0.7, metalness: 0.0
+						} ) );
+
+					}
+
+					// The mark point is the centre of the slab's top face: mid-angle,
+					// mid-radius (the notebook's label point), at height THICKNESS.
+					const am = ( node.x0 + node.x1 ) / 2;
+					const rm = ( node.y0 + node.y1 ) / 2 * S;
+					const centre = new THREE.Vector3( rm * Math.sin( am ), THICKNESS, - rm * Math.cos( am ) );
+
+					const mesh = new THREE.Mesh( sectorSlab( node, centre ), materials.get( key ) );
+					mesh.position.copy( centre );
+					mesh.name = node.data.name;
+					group.add( mesh );
+
+					ids.set( node, 'c' + marks.length );
+					markPoint.set( node, centre );
+					marks.push( { id: 'c' + marks.length, kind: 'cell', object: mesh, normal: [ 0, 1, 0 ] } );
+
+				}
+
+				/* ---------------- camera ----------------
+				   Fitted to the whole disc (every slab's world bounding-box corners)
+				   plus, once they exist, every label's corners. */
+
+				const cellPoints = [];
+				const _c = new THREE.Vector3();
+
+				for ( const mesh of group.children ) {
+
+					mesh.geometry.computeBoundingBox();
+					const bb = mesh.geometry.boundingBox;
+
+					for ( let k = 0; k < 8; k ++ ) {
+
+						_c.set( k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z );
+						cellPoints.push( _c.clone().add( mesh.position ) );
+
+					}
+
+				}
+
+				const box = new THREE.Box3();
+				for ( const p of cellPoints ) box.expandByPoint( p );
+
+				// Azimuth 25 puts camera A on the +z side, so screen-up is roughly
+				// -z: the notebook's 12 o'clock (angle 0) is at the top of the frame.
+				const frame = points => frameCamera( camera, box, { elevation: 50, azimuth: 25, fill: 0.85, points } );
+
+				let target = frame( cellPoints );
+
+				/* ---------------- labels (src/labels.js) ----------------
+				   Exactly the notebook's: cells with (y0+y1)/2 * (x1-x0) > 10 in its
+				   units; text-anchor middle, dy 0.35em (anchorY middle), 10 px
+				   (10 S world units); `rotate(x-90) translate(y,0) rotate(x<180?0:180)`
+				   = baseline along the radius at mid-angle and mid-radius, reading
+				   outward on the right half and inward on the left half. The label
+				   lies in the top plane, LABEL_LIFT above the top face. */
+
+				const labelled = root.descendants().filter( d => d.depth && ( d.y0 + d.y1 ) / 2 * ( d.x1 - d.x0 ) > 10 );
+
+				const labelPoint = new Map();
+				for ( const node of labelled ) labelPoint.set( node, markPoint.get( node ).clone().setY( THICKNESS + LABEL_LIFT ) );
+
+				let turned = 0;
+
+				labels = await hierarchyLabels( { descendants: () => labelled }, ids, labelPoint, {
+					font: '/examples/fonts/Roboto-Regular.ttf',
+					fontSize: LABEL_PX * S,
+					color: 0x333333,
+					outlineWidth: 0.25, outlineColor: 0xffffff,
+					leafOffset: 0, internalOffset: 0,
+					orient: node => {
+
+						// baseline along the radius; +z (the face) is world up
+						const am = ( node.x0 + node.x1 ) / 2;
+						const radial = new THREE.Vector3( Math.sin( am ), 0, - Math.cos( am ) );
+						if ( am >= Math.PI ) radial.negate(); // the notebook's rotate(180) on the left half
+
+						// The notebook's left-half turn is what makes its text read
+						// left-to-right; from an oblique camera the same intent is
+						// "the baseline projects rightward". Where the two disagree
+						// (labels near 12 and 6 o'clock, whose baseline is nearly
+						// vertical on screen) the baseline is turned about the face
+						// normal, so labels.js's mirror check — which turns about the
+						// label's up axis and would show the back of an up-facing
+						// label — finds nothing to flip.
+						const p = labelPoint.get( node );
+						const right = p.clone().add( radial ).project( camera ).x;
+						const left = p.clone().sub( radial ).project( camera ).x;
+						if ( right < left ) { radial.negate(); turned ++; }
+
+						return basisQuaternion( radial, UP.clone().cross( radial ) );
+
+					},
+					camera,
+					billboard: false
+				} );
+
+				// text-anchor: middle, as the notebook
+				for ( const l of labels.labels ) { l.object.anchorX = 'center'; l.anchorX = 'center'; }
+				labels.batched.sync();
+				scene.add( labels.group );
+
+				// refit with the label corners in the frame
+				const labelCorners = labels.labels.flatMap( l => {
+
+					const bb = l.object.textRenderInfo.blockBounds;
+					l.object.updateMatrixWorld( true );
+					return [ [ bb[ 0 ], bb[ 1 ] ], [ bb[ 2 ], bb[ 1 ] ], [ bb[ 0 ], bb[ 3 ] ], [ bb[ 2 ], bb[ 3 ] ] ]
+						.map( ( [ x, y ] ) => new THREE.Vector3( x, y, 0 ).applyMatrix4( l.object.matrixWorld ) );
+
+				} );
+
+				target = frame( cellPoints.concat( labelCorners ) );
+
+				/* ---------------- renderer ---------------- */
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'cells:', marks.length, 'labels:', labels.count, 'turned:', turned, 'flipped:', labels.flipped,
+					'em px at 400x250:', ( LABEL_PX * S * pxPerUnit ).toFixed( 2 ) );
+
+				attachOrbit( camera, renderer.domElement, target );
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: 0, links: 0, cells: visible.length, labels: labelled.length },
+					pickables: group.children,
+					labels,
+					planar: true
+				} );
+
+			}
+
+			/* ---------------- the slab ----------------
+			   The notebook's arc: inner radius y0, outer radius y1 - 1, pad angle
+			   min((x1-x0)/2, 0.005) at pad radius 464/2, applied as d3.arc applies
+			   it (a linear pad, so the angular pad is asin(rp / r * sin(pa / 2)) at
+			   each radius, and an edge collapses to its mid-angle when the pad
+			   would exceed the span). Angle 0 is 12 o'clock, clockwise seen from
+			   above: notebook (x, y) = (r sin a, -r cos a) becomes world (x, z).
+			   The outline is extruded THICKNESS along +y and built in local
+			   coordinates around `centre`, so the mesh's world position is the
+			   top-face centre. */
+
+			function sectorSlab( d, centre ) {
+
+				const r0 = d.y0 * S;
+				const r1 = ( d.y1 - 1 ) * S;
+				const ap = padAngleOf( d ) / 2;
+				const rp = RADIUS / 2 * S;
+
+				let a00 = d.x0, a10 = d.x1, a01 = d.x0, a11 = d.x1;
+
+				if ( ap > 1e-12 ) {
+
+					const p0 = Math.asin( rp / r0 * Math.sin( ap ) );
+					const p1 = Math.asin( rp / r1 * Math.sin( ap ) );
+					if ( a10 - a00 - 2 * p0 > 1e-12 ) { a00 += p0; a10 -= p0; } else a00 = a10 = ( d.x0 + d.x1 ) / 2;
+					if ( a11 - a01 - 2 * p1 > 1e-12 ) { a01 += p1; a11 -= p1; } else a01 = a11 = ( d.x0 + d.x1 ) / 2;
+
+				}
+
+				// outline in the shape's (u, v) = world (x, -z): outer arc forward, inner arc back
+				const pts = [];
+				const arcPoints = ( r, a, b ) => {
+
+					const n = Math.max( 1, Math.ceil( Math.abs( b - a ) / ARC_STEP ) );
+					for ( let i = 0; i <= n; i ++ ) {
+
+						const t = a + ( b - a ) * i / n;
+						pts.push( new THREE.Vector2( r * Math.sin( t ), r * Math.cos( t ) ) );
+
+					}
+
+				};
+
+				arcPoints( r1, a01, a11 );
+				arcPoints( r0, a10, a00 );
+
+				const geometry = new THREE.ExtrudeGeometry( new THREE.Shape( pts ), { depth: THICKNESS, bevelEnabled: false } );
+
+				// (u, v, w) -> (u, w, -v): extrusion along +y, shape v -> world -z; then local coordinates around the top-face centre
+				geometry.rotateX( - Math.PI / 2 );
+				geometry.translate( - centre.x, - centre.y, - centre.z );
+				geometry.computeVertexNormals();
+
+				return geometry;
+
+			}
+
+			function padAngleOf( d ) {
+
+				return Math.min( ( d.x1 - d.x0 ) / 2, 0.005 );
+
+			}
+
+			function animate() {
+
+				labels.update( camera ); // no-op unless billboard: true
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
