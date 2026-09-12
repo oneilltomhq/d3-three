@@ -285,3 +285,46 @@ renders on WebGPU, the screenshot reproduces, and the depth gate fails honestly.
   mark objects); the picking gate raycasts only those, so grids and helpers cannot occlude.
 - Flag substitution (`--disable-vulkan-surface` for `--use-angle=vulkan`), exact puppeteer
   pin, WebGPU warm-up and `--make` not blocking on gates are accepted as-is.
+
+---
+
+## Rung 1 correction (worker: Fable, 2026-09-12)
+
+Rung 0's determinism items 5 and 6 held, but the images they were comparing were
+empty. On this machine the headless compositor never receives the GPU canvas:
+`page.screenshot()` returns only the page's CSS background, for WebGL and WebGPU
+alike. `d3_blank.jpg` was black because the blank page's `body` is `#000`, not
+because the renderer drew a black scene. Three's own harness has the same
+problem here — `npm run test-e2e -- --make webgpu_lines_fat` in
+`~/src/vendor/three.js` produces a blank white jpg.
+
+Measured with a bare WebGPU clear-to-red on a 200×100 canvas:
+
+```
+flags                                    webgl px       webgpu px      toDataURL
+rung0 (--disable-vulkan-surface)         0,0,0          0,0,0          0,0,0
++ --use-gl=angle --use-angle=swiftshader 0,255,0        0,0,0          255,0,0
+```
+
+Two things had to change, both in `test/e2e/puppeteer.js`:
+
+1. **Read the canvas, not the page.** `grabCanvas()` calls
+   `canvas.toDataURL('image/png')` on the registered renderer's canvas, which
+   goes through Chrome's own readback path. It first draws one more frame and
+   awaits `device.queue.onSubmittedWorkDone()`, because the injected RAF sets
+   `_renderFinished` *before* the callback runs and a WebGPU frame can still be
+   in flight. Same size as the viewport, so `Image.scale(1/2)` is unchanged.
+2. **`VK_DRIVER_FILES` (lavapipe) had to go**, and `--enable-unsafe-swiftshader
+   --use-gl=angle --use-angle=swiftshader --use-webgpu-adapter=swiftshader`
+   added. With `VK_DRIVER_FILES` set, the canvas readback comes back fully
+   transparent (measured: 400000/400000 px at rgba 0,0,0,0) even though the
+   frame renders. Without it, and with those flags, Dawn *still* selects its
+   SwiftShader adapter — `{"vendor":"google","architecture":"swiftshader"}` —
+   so the rasterizer, and therefore determinism, is unchanged. `ensureWebGPU()`
+   now fails the run if the adapter is not SwiftShader, so this cannot silently
+   drift onto the real Intel GPU. The `VK_DRIVER_FILES=...` prefix is gone from
+   the npm scripts and both harness scripts scrub it from the child env.
+
+`examples/screenshots/d3_blank.jpg` was regenerated and now shows the blank
+page's actual clear colour (`#0b0b12`). The blank page still fails depth, angle
+and picking and passes counts, exactly as before.

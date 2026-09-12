@@ -157,6 +157,18 @@ async function main() {
 		// '--disable-vulkan-surface' of the HANDOFF flag list; WebGL still runs on
 		// ANGLE/Vulkan/lavapipe, WebGPU comes up on Dawn/SwiftShader.
 		'--disable-vulkan-surface',
+		// NOTE (rung 1): without these three, nothing a GPU canvas draws ever reaches
+		// the headless compositor on this machine — `page.screenshot()` returns the
+		// page background and the canvas is invisible, for WebGL and WebGPU alike
+		// (three's own `npm run test-e2e -- --make webgpu_lines_fat` produces a blank
+		// jpg here too). With ANGLE on SwiftShader the WebGL canvas composites, and
+		// the WebGPU canvas can at least be read back with `toDataURL` (see
+		// `grabCanvas` below). Dawn still picks its own SwiftShader adapter, so the
+		// WebGPU results are unchanged.
+		'--enable-unsafe-swiftshader',
+		'--use-gl=angle',
+		'--use-angle=swiftshader',
+		'--use-webgpu-adapter=swiftshader',
 		'--ignore-gpu-blocklist',
 		'--disable-gpu-driver-bug-workarounds',
 		'--disable-gpu-watchdog',
@@ -165,9 +177,18 @@ async function main() {
 
 	const viewport = { width: width * viewScale, height: height * viewScale };
 
+	// VK_DRIVER_FILES (lavapipe) must NOT be set: with it, the WebGPU canvas is
+	// rendered but never readable — `toDataURL` returns a fully transparent
+	// image (measured: 400000/400000 px at rgba 0,0,0,0). Without it, and with
+	// the ANGLE/SwiftShader flags above, Dawn still selects its SwiftShader
+	// adapter, so the rasterizer is the same software one and determinism is
+	// unchanged; `ensureWebGPU` below asserts that.
+	const env = { ...process.env };
+	delete env.VK_DRIVER_FILES;
+
 	const launchOptions = {
 		headless: ( process.env.VISIBLE ) ? false : 'new',
-		env: { ...process.env },
+		env,
 		args: flags,
 		defaultViewport: viewport,
 		handleSIGINT: false,
@@ -306,6 +327,13 @@ async function ensureWebGPU( ctx, attempts = 5 ) {
 		} );
 
 		if ( info.adapter ) {
+
+			if ( info.adapter.architecture !== 'swiftshader' ) {
+
+				console.red( `WebGPU adapter is ${ JSON.stringify( info.adapter ) }, not SwiftShader. Screenshots would not reproduce.` );
+				close( 1 );
+
+			}
 
 			console.green( `WebGPU adapter: ${ JSON.stringify( info.adapter ) } (attempt ${ i + 1 })` );
 			return info.adapter;
@@ -516,7 +544,7 @@ async function renderOnce( page, cleanPage, file ) {
 
 	const elapsed = ( performance.now() - pageStart ) / 1000;
 
-	const png = await page.screenshot();
+	const png = await grabCanvas( page );
 	const screenshot = ( await Image.read( png ) ).scale( 1 / viewScale );
 
 	if ( page.error !== undefined ) throw new Error( page.error );
@@ -530,6 +558,55 @@ async function renderOnce( page, cleanPage, file ) {
 	const report = await page.evaluate( () => window.d33.report() );
 
 	return { png, screenshot, report, elapsed };
+
+}
+
+/* The headless compositor never gets the GPU canvas on this machine, so
+   `page.screenshot()` would return an empty page. Read the canvas itself
+   instead — `toDataURL` goes through Chrome's own readback path and returns the
+   rendered WebGPU image. Falls back to `page.screenshot()` if there is no
+   canvas. The result is the same size as the viewport (dpr 1), so
+   `Image.scale( 1 / viewScale )` downscales exactly as before. */
+
+async function grabCanvas( page ) {
+
+	// `_renderFinished` is set by the injected RAF *before* the callback runs, so
+	// at this point the frame may still be in flight. Draw one more frame and
+	// drain the device queue before reading back. Deterministic: same scene,
+	// same camera, frozen clocks, no randomness.
+
+	await page.evaluate( async () => {
+
+		const state = window.d33 ? window.d33.state : null;
+		const renderer = state ? state.renderer : null;
+
+		if ( ! renderer ) return;
+
+		if ( state.scene && state.camera ) renderer.render( state.scene, state.camera );
+
+		const device = renderer.backend ? renderer.backend.device : null;
+		if ( device ) await device.queue.onSubmittedWorkDone();
+
+	} );
+
+	const dataURL = await page.evaluate( () => {
+
+		const renderer = window.d33 && window.d33.state ? window.d33.state.renderer : null;
+		const canvas = ( renderer && renderer.domElement ) || document.querySelector( 'canvas' );
+
+		if ( ! canvas ) return null;
+
+		return canvas.toDataURL( 'image/png' );
+
+	} );
+
+	if ( dataURL === null || ! dataURL.startsWith( 'data:image/png;base64,' ) ) {
+
+		return await page.screenshot();
+
+	}
+
+	return Buffer.from( dataURL.slice( 'data:image/png;base64,'.length ), 'base64' );
 
 }
 

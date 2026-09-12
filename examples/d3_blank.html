@@ -67,7 +67,7 @@
 				camera.position.set( 0, 0, 10 );
 				camera.lookAt( 0, 0, 0 );
 
-				renderer = new THREE.WebGPURenderer( { antialias: true, forceWebGL: false } );
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
 				renderer.setPixelRatio( window.devicePixelRatio );
 				renderer.setSize( window.innerWidth, window.innerHeight );
 				renderer.setAnimationLoop( animate );

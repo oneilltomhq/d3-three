@@ -1,0 +1,64 @@
+{
+	"file": "d3_cluster",
+	"gates": {
+		"depth": {
+			"extents": [
+				87.68723571155859,
+				38.60401791980016,
+				105.03262991049017
+			],
+			"ratio": 0.3675430954428055,
+			"pass": true
+		},
+		"counts": {
+			"nodes": 252,
+			"links": 251,
+			"expectedNodes": 252,
+			"expectedLinks": 251,
+			"pass": true
+		},
+		"angle": {
+			"a": {
+				"width": 0.7497330366097306,
+				"height": 0.8499802993309555,
+				"area": 0.6372583108758451
+			},
+			"b": {
+				"width": 0.8805707773766254,
+				"height": 1.172322436787944,
+				"area": 1.0323128794984195
+			},
+			"threshold": 0.01,
+			"pass": true
+		},
+		"picking": {
+			"sampled": 20,
+			"hitA": 20,
+			"hitB": 20,
+			"pickables": 252,
+			"misses": [],
+			"pass": true
+		},
+		"pass": true
+	},
+	"expected": {
+		"nodes": 252,
+		"links": 251
+	},
+	"target": {
+		"x": -4.280153056931424,
+		"y": -34.62851900731508,
+		"z": 2.4948577233242313
+	},
+	"env": {
+		"backend": "WebGPUBackend",
+		"isWebGPUBackend": true,
+		"hasNavigatorGPU": true,
+		"adapterInfo": {
+			"vendor": "google",
+			"architecture": "swiftshader",
+			"device": "",
+			"description": ""
+		}
+	}
+}

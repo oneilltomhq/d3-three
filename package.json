@@ -6,10 +6,10 @@
 	"description": "D3 gallery examples lifted into real 3D with Three.js WebGPURenderer",
 	"scripts": {
 		"build:d3": "esbuild src/vendor/d3-entry.js --bundle --format=esm --outfile=examples/jsm/vendor/d3.js",
-		"e2e": "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json node test/e2e/puppeteer.js",
-		"e2e:make": "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json node test/e2e/puppeteer.js --make",
-		"e2e:twice": "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json node test/e2e/puppeteer.js --twice",
-		"determinism": "VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json node test/e2e/determinism.js",
+		"e2e": "node test/e2e/puppeteer.js",
+		"e2e:make": "node test/e2e/puppeteer.js --make",
+		"e2e:twice": "node test/e2e/puppeteer.js --twice",
+		"determinism": "node test/e2e/determinism.js",
 		"serve": "node test/e2e/server.js"
 	},
 	"dependencies": {

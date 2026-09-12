@@ -26,6 +26,11 @@ const flags = [
 	'--enable-unsafe-webgpu',
 	'--enable-features=Vulkan',
 	'--disable-vulkan-surface', // see puppeteer.js: '--use-angle=vulkan' kills the WebGPU adapter here
+	// see puppeteer.js: without these the GPU canvas is never readable here
+	'--enable-unsafe-swiftshader',
+	'--use-gl=angle',
+	'--use-angle=swiftshader',
+	'--use-webgpu-adapter=swiftshader',
 	'--ignore-gpu-blocklist',
 	'--disable-gpu-driver-bug-workarounds',
 	'--disable-gpu-watchdog',
@@ -67,7 +72,7 @@ async function newBrowser() {
 
 	const browser = await puppeteer.launch( {
 		headless: 'new',
-		env: { ...process.env },
+		env: ( () => { const e = { ...process.env }; delete e.VK_DRIVER_FILES; return e; } )(),
 		args: flags,
 		defaultViewport: { width: 800, height: 500 },
 		handleSIGINT: false,

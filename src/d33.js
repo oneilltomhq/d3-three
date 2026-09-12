@@ -10,6 +10,9 @@
 //   expected: { nodes, links } straight off the d3 hierarchy
 //             ( root.descendants().length, root.links().length ) (§C.12)
 //   target:   optional orbit target; defaults to the centroid of node/cell marks.
+//   pickables: optional array of Object3D the picking gate is allowed to hit.
+//             Defaults to the node/cell mark objects, so grids, helpers and
+//             link geometry can never occlude a node (rung 0 director ruling).
 //
 // The e2e harness then calls `window.d33.report()` after the screenshot and
 // writes `marks/<file>.json` and `gates/<file>.json`. Everything here runs on
@@ -23,7 +26,8 @@ const state = {
 	camera: null,
 	marks: [],
 	expected: { nodes: 0, links: 0 },
-	target: null
+	target: null,
+	pickables: null
 };
 
 // gate thresholds
@@ -39,6 +43,7 @@ export function register( options ) {
 	state.marks = options.marks || [];
 	state.expected = options.expected || { nodes: 0, links: 0 };
 	state.target = options.target || null;
+	state.pickables = options.pickables || null;
 
 	window.d33 = api;
 
@@ -230,11 +235,11 @@ function angleGate( positions, cameraA, cameraB ) {
 
 }
 
-function hits( raycaster, camera, ndc, object, scene ) {
+function hits( raycaster, camera, ndc, object, pickables ) {
 
 	raycaster.setFromCamera( new THREE.Vector2( ndc.x, ndc.y ), camera );
 
-	const intersections = raycaster.intersectObjects( scene.children, true );
+	const intersections = raycaster.intersectObjects( pickables, true );
 	if ( intersections.length === 0 ) return false;
 
 	let hit = intersections[ 0 ].object;
@@ -253,6 +258,11 @@ function hits( raycaster, camera, ndc, object, scene ) {
 function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 
 	const { scene } = state;
+
+	// Only the node/cell marks are pickable unless the example says otherwise,
+	// so helpers and links cannot occlude a node (rung 0 director ruling).
+	const pickables = state.pickables
+		|| state.marks.filter( m => m.kind !== 'link' ).map( m => m.object );
 
 	if ( nodeMarks.length === 0 || scene === null ) {
 
@@ -276,8 +286,8 @@ function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 		const ndcA = p.clone().project( cameraA );
 		const ndcB = p.clone().project( cameraB );
 
-		const okA = hits( raycaster, cameraA, ndcA, mark.object, scene );
-		const okB = hits( raycaster, cameraB, ndcB, mark.object, scene );
+		const okA = hits( raycaster, cameraA, ndcA, mark.object, pickables );
+		const okB = hits( raycaster, cameraB, ndcB, mark.object, pickables );
 
 		if ( okA ) hitA ++;
 		if ( okB ) hitB ++;
@@ -285,7 +295,7 @@ function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 
 	}
 
-	return { sampled, hitA, hitB, misses, pass: sampled > 0 && hitA === sampled && hitB === sampled };
+	return { sampled, hitA, hitB, pickables: pickables.length, misses, pass: sampled > 0 && hitA === sampled && hitB === sampled };
 
 }
 

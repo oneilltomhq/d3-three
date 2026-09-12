@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - cluster dendrogram as a cone tree</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 cluster dendrogram (flare.json) lifted to a cone tree</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d33": "/src/d33.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import { register } from 'd33';
+			import { linkCurve, fatLine, lineMaterial } from '/src/link.js';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+
+			let renderer, scene, camera;
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data + d3 layout ---------------- */
+
+				const data = await fetch( '/gallery/hierarchies/cluster.v2/files/flare.json' ).then( r => r.json() );
+
+				const root = d3.hierarchy( data );
+				root.sort( ( a, b ) => d3.ascending( a.data.name, b.data.name ) );
+
+				// d3.cluster still decides the depth coordinate and the sibling order.
+				// nodeSize([1,1]) makes node.y = ( root.height - node.height ), the
+				// dendrogram property: every leaf at the deepest level.
+				d3.cluster().nodeSize( [ 1, 1 ] )( root );
+
+				const { position, R } = coneLayout( root );
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.2 ) );
+
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.8 );
+				sun.position.set( 1, 2, 1.5 ).normalize();
+				scene.add( sun );
+
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				/* ---------------- marks: one Object3D per datum ---------------- */
+
+				const marks = [];
+
+				// colour: internal nodes #555 as in the notebook; leaves by their
+				// top-level package, so the ten cones read apart in 3D.
+				const packages = root.children.map( c => c.data.name );
+				const colour = d3.scaleOrdinal( packages, d3.schemeTableau10 );
+
+				const internalGeometry = new THREE.SphereGeometry( 0.6, 16, 12 );
+				const leafGeometry = new THREE.SphereGeometry( 0.45, 14, 10 );
+				const internalMaterial = new THREE.MeshStandardNodeMaterial( { color: 0x555555, roughness: 0.65, metalness: 0.0 } );
+				const leafMaterials = new Map();
+
+				const nodes = new THREE.Group();
+				nodes.name = 'nodes';
+				scene.add( nodes );
+
+				const ids = new Map();
+				root.each( ( node, i ) => ids.set( node, 'n' + i ) );
+
+				for ( const node of root.descendants() ) {
+
+					const leaf = ! node.children;
+					let material = internalMaterial;
+
+					if ( leaf ) {
+
+						const pkg = node.depth === 0 ? packages[ 0 ] : node.ancestors().at( - 2 ).data.name;
+						if ( ! leafMaterials.has( pkg ) ) {
+
+							leafMaterials.set( pkg, new THREE.MeshStandardNodeMaterial( {
+								color: new THREE.Color( colour( pkg ) ), roughness: 0.65, metalness: 0.0
+							} ) );
+
+						}
+
+						material = leafMaterials.get( pkg );
+
+					}
+
+					const mesh = new THREE.Mesh( leaf ? leafGeometry : internalGeometry, material );
+					mesh.position.copy( position.get( node ) );
+					mesh.name = node.data.name;
+					nodes.add( mesh );
+
+					marks.push( { id: ids.get( node ), kind: 'node', object: mesh } );
+
+				}
+
+				// links: one fat line per root.links(), a cubic bezier whose control
+				// points are offset along the depth axis (3D linkHorizontal).
+				const depthAxis = new THREE.Vector3( 0, 1, 0 );
+				const linkMaterial = lineMaterial( { color: 0x555555, opacity: 0.4, linewidth: 1.5 } );
+
+				const links = new THREE.Group();
+				links.name = 'links';
+				scene.add( links );
+
+				for ( const link of root.links() ) {
+
+					const points = linkCurve( position.get( link.source ), position.get( link.target ), depthAxis, 16 );
+					const line = fatLine( points, { material: linkMaterial } );
+					links.add( line );
+
+					marks.push( {
+						id: 'l' + marks.length, kind: 'link', object: line,
+						a: ids.get( link.source ), b: ids.get( link.target )
+					} );
+
+				}
+
+				/* ---------------- camera + renderer ---------------- */
+
+				const nodePoints = marks.filter( m => m.kind === 'node' ).map( m => m.object.position );
+
+				const box = new THREE.Box3();
+				for ( const p of nodePoints ) box.expandByPoint( p );
+
+				const target = frameCamera( camera, box, {
+					elevation: 30, azimuth: 35, fill: 0.85, points: nodePoints
+				} );
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'R(root):', R.get( root ).toFixed( 3 ),
+					'nodes:', root.descendants().length, 'links:', root.links().length );
+
+				attachOrbit( camera, renderer.domElement, target );
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: root.descendants().length, links: root.links().length },
+					pickables: nodes.children
+				} );
+
+			}
+
+			/* ---------------- the cone tree (layouts/cluster.md) ----------------
+			   Bottom-up: every node gets a cone radius R(n) — the circle its
+			   children sit on — and a disc radius disc(n) bounding its whole
+			   subtree in the horizontal plane. Children are packed around the
+			   circumference by their disc diameters, so no two sibling subtrees
+			   overlap. Top-down: place each child on its parent's circle.
+			   Depth stays an axis: y = -( root.height - node.height ) * dy. */
+
+			function coneLayout( root, { r0 = 1, margin = 1.12 } = {} ) {
+
+				const disc = new Map(), R = new Map(), angles = new Map();
+
+				// Smallest circle radius on which k discs of radii d[i], in this
+				// order, fit with `margin` slack: the angle each neighbouring pair
+				// needs is 2*asin( gap / r ), and they must sum to 2*pi.
+				const gaps = d => d.map( ( _, i ) => margin * ( d[ i ] + d[ ( i + 1 ) % d.length ] ) / 2 );
+
+				function packRadius( g ) {
+
+					const total = r => g.reduce( ( s, c ) => s + 2 * Math.asin( Math.min( 1, c / r ) ), 0 );
+					let lo = Math.max( ...g ), hi = lo;
+					while ( total( hi ) > 2 * Math.PI ) hi *= 2;
+					for ( let i = 0; i < 80; i ++ ) {
+
+						const mid = ( lo + hi ) / 2;
+						if ( total( mid ) > 2 * Math.PI ) lo = mid; else hi = mid;
+
+					}
+
+					return hi;
+
+				}
+
+				root.eachAfter( node => {
+
+					const children = node.children;
+
+					if ( ! children ) {
+
+						disc.set( node, r0 );
+						R.set( node, 0 );
+						return;
+
+					}
+
+					const d = children.map( c => disc.get( c ) );
+					const k = children.length;
+
+					let r = k === 1 ? r0 : Math.max( r0, packRadius( gaps( d ) ) );
+					r = Math.max( r, margin * Math.max( ...d ) ); // parent centre stays clear of every child disc
+
+					R.set( node, r );
+					disc.set( node, r + Math.max( ...d ) );
+
+					if ( k === 1 ) {
+
+						angles.set( node, [ Math.PI ] );
+
+					} else {
+
+						const need = gaps( d ).map( g => 2 * Math.asin( Math.min( 1, g / r ) ) );
+						const scale = 2 * Math.PI / need.reduce( ( a, b ) => a + b, 0 );
+						const theta = [];
+						let acc = 0;
+						for ( let i = 0; i < k; i ++ ) {
+
+							theta.push( acc );
+							acc += need[ i ] * scale;
+
+						}
+
+						angles.set( node, theta );
+
+					}
+
+				} );
+
+				// depth spacing: the whole tree is as deep as the root cone is wide
+				const dy = R.get( root ) / root.height;
+
+				const position = new Map();
+				position.set( root, new THREE.Vector3( 0, 0, 0 ) ); // y = -( root.height - root.height ) * dy
+
+				root.eachBefore( node => {
+
+					const children = node.children;
+					if ( ! children ) return;
+
+					const p = position.get( node );
+					const r = R.get( node );
+					const theta = angles.get( node );
+
+					children.forEach( ( c, i ) => position.set( c, new THREE.Vector3(
+						p.x + r * Math.cos( theta[ i ] ),
+						- ( root.height - c.height ) * dy,
+						p.z + r * Math.sin( theta[ i ] )
+					) ) );
+
+				} );
+
+				return { position, R, disc };
+
+			}
+
+			function animate() {
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
