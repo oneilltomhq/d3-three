@@ -1,0 +1,64 @@
+{
+	"file": "d3_tree",
+	"gates": {
+		"depth": {
+			"extents": [
+				83.81416061724457,
+				74,
+				84.45381864700965
+			],
+			"ratio": 0.8762185201985558,
+			"pass": true
+		},
+		"counts": {
+			"nodes": 252,
+			"links": 251,
+			"expectedNodes": 252,
+			"expectedLinks": 251,
+			"pass": true
+		},
+		"angle": {
+			"a": {
+				"width": 0.5007513289027352,
+				"height": 0.8499786196589041,
+				"area": 0.4256279233331088
+			},
+			"b": {
+				"width": 0.5416041294541213,
+				"height": 0.8039796353078077,
+				"area": 0.4354386904797271
+			},
+			"threshold": 0.01,
+			"pass": true
+		},
+		"picking": {
+			"sampled": 20,
+			"hitA": 20,
+			"hitB": 20,
+			"pickables": 252,
+			"misses": [],
+			"pass": true
+		},
+		"pass": true
+	},
+	"expected": {
+		"nodes": 252,
+		"links": 251
+	},
+	"target": {
+		"x": 11.387107387774092,
+		"y": 12.45059145434429,
+		"z": -1.9955488299732633
+	},
+	"env": {
+		"backend": "WebGPUBackend",
+		"isWebGPUBackend": true,
+		"hasNavigatorGPU": true,
+		"adapterInfo": {
+			"vendor": "google",
+			"architecture": "swiftshader",
+			"device": "",
+			"description": ""
+		}
+	}
+}

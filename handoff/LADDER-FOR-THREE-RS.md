@@ -67,3 +67,49 @@ picking 20/20 from both cameras.
 
 **Gap:** no labels. The notebook labels every node; the 3D page has none, and
 `src/` has no text primitive yet.
+
+---
+
+## 2. tidy tree → radial fan of tidy planes
+
+| artefact | path |
+| --- | --- |
+| page | `examples/d3_tree.html` |
+| screenshot | `examples/screenshots/d3_tree.jpg` (400×250) |
+| marks | `marks/d3_tree.json` (252 nodes, 251 links) |
+| layout note | `layouts/tree.md` |
+| reference render of the original notebook | `ref/tree.png` (928×1945) |
+
+Source notebook: `d3-gallery/notebooks/hierarchies/tree.v2`, data
+`files/flare.json` (252 nodes, 220 leaves, height 4, 10 top-level packages).
+
+**d3 modules needed:** d3-hierarchy (`hierarchy`, `tree`), d3-array
+(`ascending`), d3-scale (`scaleOrdinal`), d3-scale-chromatic (`schemeTableau10`).
+The DOM half of d3 is not used at all.
+
+**3D layout:** a radial fan of tidy planes. Reingold–Tilford is compositional, so
+d3's tidy layout is kept verbatim and each of the ten top-level subtrees becomes
+its own vertical plane ("blade"), fanned around the root like pages around a
+spine: top-level child `c_i` gets azimuth `θ_i = 2π i / 10`, and every node `n`
+of its subtree goes to `(n.y·cos θ_i, n.x − c_i.x, n.y·sin θ_i)`. Depth runs
+radially outward, breadth vertically inside a blade, root at the origin.
+`nodeSize([1, dy])` with `dy = B/5`, `B = 74` the largest blade breadth (measured
+by running the layout once at `nodeSize([1,1])`). Result `83.81 × 74.00 × 84.45`,
+depth ratio 0.876. About 30 lines on top of d3.tree, inside
+`examples/d3_tree.html`; full spec in `layouts/tree.md`.
+
+**Marks:** one `Mesh(SphereGeometry)` per descendant (r 0.45 leaf / 0.6 internal,
+internal `#555`, leaves coloured by top-level package from schemeTableau10 —
+shared with rung 1 as `src/nodes.js`), one `Line2` per link (cubic bezier with
+control points offset along that blade's radial axis — the 3D `linkHorizontal` —
+16 segments, `#555`, opacity 0.4, 1.5 px).
+
+**Camera:** PerspectiveCamera fov 40, elevation 30°, azimuth 9°, fitted to the
+projected node positions at 0.85 fill. Azimuth 9° is 9° off every edge-on blade
+for both the gate's orthogonal cameras (blades at multiples of 36°). Fixed; one
+frame.
+
+**Gates:** depth 0.876 · counts 252/252, 251/251 · angle 0.426 / 0.435 ·
+picking 20/20 from both cameras.
+
+**Gap:** no labels, same as rung 1.
