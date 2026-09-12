@@ -54,6 +54,14 @@ const thenCells = ( process.env.REF_THEN || '' ).split( ',' ).map( s => s.trim()
 // evaluated in the page with `d3` in scope, e.g.
 //   REF_EXPRS='{"tile":"d3.treemapBinary"}' node tools/ref.js hierarchies/treemap.v2
 const extraExprs = JSON.parse( process.env.REF_EXPRS || '{}' );
+// A cell the notebook imports from another notebook (`main.define("Legend",
+// ["module 1", "@variable"], ...)` is not a `main.variable(...)` line, so it
+// is invisible to cellDefinitions): REF_IMPORTS names the notebook directory
+// it comes from, relative to the d3-gallery root (the parent of GALLERY_DIR),
+// and that notebook's cell of the same name is evaluated with the same
+// machinery, e.g.
+//   REF_IMPORTS='{"Legend":"deps/color-legend"}' node tools/ref.js maps/world-choropleth.v2
+const imports = JSON.parse( process.env.REF_IMPORTS || '{}' );
 
 /* The notebook's cell wiring: cell name -> { deps, fn } */
 
@@ -92,6 +100,32 @@ if ( ! cells.has( 'chart' ) ) {
 // classic script and leave every cell function as a global.
 const script = source.replace( /export\s+default\s+function\s+define/, 'function define' );
 
+// Imported notebooks (REF_IMPORTS): each is eval'd inside its own function
+// scope in the page so its cell functions never collide with the main
+// notebook's, and only the named cell (with the cells it depends on) is
+// exposed.
+const importedNotebooks = {};
+
+for ( const [ name, dir ] of Object.entries( imports ) ) {
+
+	const depPath = path.join( GALLERY_DIR, '..', dir, 'notebook.js' );
+	const depSource = await fs.readFile( depPath, 'utf8' );
+	const depCells = cellDefinitions( depSource );
+
+	if ( ! depCells.has( name ) ) {
+
+		console.error( `No "${ name }" cell in ${ depPath }. Cells: ${ [ ...depCells.keys() ].join( ', ' ) }` );
+		process.exit( 1 );
+
+	}
+
+	importedNotebooks[ name ] = {
+		script: depSource.replace( /export\s+default\s+function\s+define/, 'function define' ),
+		cells: Object.fromEntries( depCells )
+	};
+
+}
+
 // An ephemeral port: a static server for this repo may already be running on a
 // fixed one, and this tool must not collide with it.
 const server = createServer();
@@ -126,12 +160,21 @@ await page.evaluate( async url => {
 
 }, `http://localhost:${ port }/examples/jsm/vendor/d3.js` );
 
-const size = await page.evaluate( async ( script, cells, filesBase, extraValues, svgSize, thenCells, extra ) => {
+// topojson-client (Observable's `topojson` builtin), vendored as an ES module
+// the same way; a notebook that never asks for `topojson` never notices.
+await page.evaluate( async url => {
+
+	try { window.topojson = await import( url ); } catch ( e ) { window.topojson = undefined; }
+
+}, `http://localhost:${ port }/examples/jsm/vendor/topojson-client.js` );
+
+const size = await page.evaluate( async ( script, cells, filesBase, extraValues, svgSize, thenCells, extra, importedNotebooks ) => {
 
 	eval( script ); // eslint-disable-line no-eval
 
 	const values = {
 		d3: window.d3,
+		topojson: window.topojson,
 		width: 928,
 		// Observable's `invalidation` resolves when the cell is re-run; here it
 		// never is, so a promise that never settles. Passed to the cell as-is
@@ -154,6 +197,20 @@ const size = await page.evaluate( async ( script, cells, filesBase, extraValues,
 
 	}
 
+	// REF_IMPORTS: the imported notebook's cell functions, scoped
+	for ( const [ name, dep ] of Object.entries( importedNotebooks ) ) {
+
+		const fnNames = [ ...new Set( Object.values( dep.cells ).map( c => c.fn ) ) ];
+		const fns = new Function( dep.script + '\nreturn { ' + fnNames.join( ', ' ) + ' };' )(); // eslint-disable-line no-new-func
+
+		for ( const [ cellName, cell ] of Object.entries( dep.cells ) ) {
+
+			if ( cellName === name || ! ( cellName in cells ) ) cells[ cellName ] = { deps: cell.deps, fn: fns[ cell.fn ] };
+
+		}
+
+	}
+
 	const call = async name => {
 
 		if ( name in values ) return values[ name ];
@@ -164,7 +221,8 @@ const size = await page.evaluate( async ( script, cells, filesBase, extraValues,
 		const args = [];
 		for ( const dep of cell.deps ) args.push( dep === 'invalidation' ? values.invalidation : await call( dep ) );
 
-		values[ name ] = await eval( cell.fn )( ...args ); // eslint-disable-line no-eval
+		const fn = typeof cell.fn === 'function' ? cell.fn : eval( cell.fn ); // eslint-disable-line no-eval
+		values[ name ] = await fn( ...args );
 		return values[ name ];
 
 	};
@@ -187,7 +245,7 @@ const size = await page.evaluate( async ( script, cells, filesBase, extraValues,
 	const rect = node.getBoundingClientRect();
 	return { width: Math.ceil( rect.width ), height: Math.ceil( rect.height ) };
 
-}, script, Object.fromEntries( cells ), `http://localhost:${ port }/gallery/${ target }/files/`, extraValues, svgSize, thenCells, extraExprs );
+}, script, Object.fromEntries( cells ), `http://localhost:${ port }/gallery/${ target }/files/`, extraValues, svgSize, thenCells, extraExprs, importedNotebooks );
 
 await page.setViewport( { width: size.width, height: size.height } );
 
