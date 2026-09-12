@@ -52,7 +52,32 @@ better, not worse. Nothing in the layout was changed to get it.
   with `axis` = the blade's radial unit vector `(cos θ_i, 0, sin θ_i)`; the ten
   root→child links use their own child's radial vector. Same shared
   `Line2NodeMaterial` as rung 1: `#555`, opacity 0.4, 1.5 px.
-- no labels (**gap**, as rung 1).
+
+## Labels (rung 3)
+
+Same primitive as `layouts/cluster.md` (`src/labels.js` on lib3 `sdf-text`,
+Roboto Regular, fill `#333`, white halo `outlineWidth 0.25`, one `Text` per node
+in one `BatchedText`, 252).
+
+- **Size.** `fontSize = min( 8 px at the target distance, leaf pitch )` with
+  leaf pitch `dx = 1` — the notebook's own rule (10 px text on a 10 px
+  `nodeSize`), so stacked leaf labels in a blade touch but do not overlap. On
+  flare that is **1.0 world unit = 2.53 px** at 400×250 (10 px at 1600×1000);
+  the 8 px cap would be 3.16 and overlaps 3:1 inside a blade. The reference
+  screenshot therefore shows labels as texture, not text; the 1600×1000 eyeball
+  is where they read.
+- **Orientation (not billboarded).** Each label lies in its blade's plane:
+  local +x = the blade's radial unit vector `(cos θ_i, 0, sin θ_i)`
+  (`axis.get(node)`), local +y = world up; root: +x = (1, 0, 0). Leaves anchored
+  `start`, offset `+0.80` along the radial (outward); internal nodes anchored
+  `end`, offset `−0.95` (inward, toward the spine). This is the notebook's
+  placement (`x: d.children ? -6 : 6`, `text-anchor: d.children ? end :
+  start`) rotated with the subtree.
+- **Mirror rule** as in cluster.md: **89 of 252** labels are flipped at
+  azimuth 9° (the blades whose radial points camera-left).
+- `billboard: true` implemented, off. Labels are not marks, not pickable,
+  `renderOrder 1`. Dumped to `marks/d3_tree.json` `labels[]` with the same
+  fields as cluster.
 
 ## Camera
 
@@ -67,11 +92,13 @@ PerspectiveCamera fov 40, elevation 30°, azimuth 9°, fill 0.85 via
 Reuses `link.js`, `frame.js`, `orbit.js`, `d33.js` unchanged. The node/colour
 code from rung 1 was lifted into **`src/nodes.js`** (`hierarchyNodes(root,
 position, options)` → `{ group, marks, ids, colour }`) and `d3_cluster.html`
-now uses it too, still at Diff 0.0%.
+now uses it too, still at Diff 0.0%. Rung 3 added `src/labels.js` and the
+`labels` option of `register()`.
 
 ## For three-rs
 
 d3 modules: d3-hierarchy (hierarchy, tree), d3-array (ascending),
 d3-scale (scaleOrdinal), d3-scale-chromatic (schemeTableau10). Layout: ~30 lines
 on top of d3.tree's x/y — a rotation of each top-level subtree about the
-vertical axis, plus the two-pass measurement of `B`.
+vertical axis, plus the two-pass measurement of `B`. Labels: SDF text as in
+cluster.md, consumed from `marks/d3_tree.json` `labels[]`.

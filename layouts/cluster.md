@@ -63,8 +63,42 @@ construction. `R(root)` goes from 27.2 to 38.6 and the layout is
   (251), a cubic bezier from parent to child whose control points are offset
   along the depth axis (the 3D analogue of `linkHorizontal`), 16 segments,
   `#555`, opacity 0.4, linewidth 1.5 px. One shared `Line2NodeMaterial`.
-- no labels on this rung (**gap**; the notebook labels every node, the 3D page
-  labels nothing — a billboard text primitive is the next thing `src/` needs).
+
+## Labels (rung 3)
+
+One `Text` per `root.descendants()` (252), all in one `BatchedText` from lib3's
+`sdf-text` (`src/labels.js`, `hierarchyLabels`). Content `d.data.name`,
+Roboto Regular from `examples/fonts/Roboto-Regular.ttf` (vector path: real font
+metrics and kerning), fill `#333`, white halo `outlineWidth 0.25` (the 3D
+counterpart of the notebook's `paint-order: stroke`).
+
+- **Size.** `fontSize = min( 8 px at the target distance, 0.6 · leaf pitch )`
+  with leaf pitch `2·m·r0 = 2.24` (the chord between neighbouring leaves on a
+  cone). On flare that is **1.344 world units = 4.05 px** at 400×250
+  (16 px at 1600×1000); the 8 px cap would be 2.654. Full pitch (2.24, 6.75 px)
+  was tried: legible, but from 30° up the near and far sides of one ring
+  overlap in projection; 0.6 reads as a dendrogram.
+- **Orientation (not billboarded).** Each label lies in the vertical plane
+  through the node and its parent cone's axis: local +x = the horizontal unit
+  vector from the parent's (x, z) to the node's, local +y = world up
+  (`basisQuaternion(out, UP)`); root: +x = (1, 0, 0). Leaves are anchored
+  `start` and offset `+0.80` along +x (0.45 radius + 0.35 gap), outward;
+  internal nodes anchored `end`, offset `−0.95` (0.6 + 0.35), inward.
+  `anchorY: middle`.
+- **Mirror rule.** If local +x projects to the left of local −x from the fixed
+  camera, the label is turned 180° about its own up axis and the anchor swapped
+  (`start ↔ end`), so the text block stays on the same side of the node and
+  reads left-to-right — the notebook's `text-anchor: x < π ? start : end`.
+  **140 of 252** labels are flipped on this page at azimuth 35°.
+- `billboard: true` is implemented in `hierarchyLabels` (camera quaternion
+  copied into every label each frame) and **off** here.
+- Labels are not marks and are not pickable; the batch renders after nodes and
+  links (`renderOrder 1`, `depthWrite false`, depth-tested, so a label behind a
+  sphere is hidden by it).
+- Dumped to `marks/d3_cluster.json` as `labels[]`:
+  `{ id, text, x, y, z, q: [x, y, z, w], anchorX }` — the anchor point in
+  world space (not the node), the label's world quaternion (+x baseline,
+  +y up, faces +z), and the SVG-style anchor after the mirror rule.
 
 ## Camera
 
@@ -79,11 +113,15 @@ render is one frame.
 
 `src/link.js` (`linkCurve`, `fatLine`, `lineMaterial`), `src/frame.js`
 (`frameCamera`), `src/orbit.js` (`attachOrbit`), `src/d33.js` registration with
-`pickables`.
+`pickables` and, since rung 3, `labels`; `src/labels.js` (`hierarchyLabels`,
+`basisQuaternion`) on lib3 `sdf-text`.
 
 ## For three-rs
 
 d3 modules: d3-hierarchy (hierarchy, cluster), d3-array (ascending),
 d3-scale (scaleOrdinal), d3-scale-chromatic (schemeTableau10). Layout: cone
 tree above, ~70 lines, depends only on the hierarchy's `descendants`,
-`children`, `height` and sibling order.
+`children`, `height` and sibling order. Labels need an SDF-text equivalent
+(Roboto Regular TTF, fill/halo as above); every per-label position, quaternion,
+anchor and string is in `marks/d3_cluster.json` `labels[]`, so a port can place
+them without re-deriving the orientation or mirror rule.

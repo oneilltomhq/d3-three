@@ -21,7 +21,8 @@
 					"three/tsl": "/build/three.tsl.js",
 					"three/addons/": "/jsm/",
 					"d3": "/examples/jsm/vendor/d3.js",
-					"d33": "/src/d33.js"
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
 				}
 			}
 		</script>
@@ -35,8 +36,11 @@
 			import { frameCamera } from '/src/frame.js';
 			import { attachOrbit } from '/src/orbit.js';
 			import { hierarchyNodes } from '/src/nodes.js';
+			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
 
-			let renderer, scene, camera;
+			let renderer, scene, camera, labels;
+
+			const UP = new THREE.Vector3( 0, 1, 0 );
 
 			await init();
 
@@ -131,6 +135,46 @@
 					elevation: 30, azimuth: 35, fill: 0.85, points: nodePoints
 				} );
 
+				/* ---------------- labels: one Text per node (src/labels.js) ----------------
+				   Em size in world units: at most LABEL_PX tall at the frame's
+				   250 px height (measured at the camera's distance to the target),
+				   and never more than the layout's leaf pitch — the notebook's own
+				   rule (10 px text on a 10 px nodeSize), so neighbouring leaf
+				   labels do not overlap each other. Laid out (font awaited) BEFORE
+				   the animation loop exists, so the harness's single frame sees
+				   finished labels. */
+
+				const LABEL_PX = 8;
+				// Leaf pitch on a cone = 2 * margin * r0, the chord between neighbouring
+				// leaves. Only 0.6 of it: ring labels radiate, and from 30 degrees up the
+				// near and far sides of one ring overlap in projection at full pitch
+				// (tried 1.0: legible but crowded; 0.6 reads as a dendrogram).
+				const LEAF_PITCH = 0.6 * ( 2 * 1.12 * 1 );
+				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+				const fontSize = Math.min( LABEL_PX / pxPerUnit, LEAF_PITCH );
+
+				labels = await hierarchyLabels( root, ids, position, {
+					font: '/examples/fonts/Roboto-Regular.ttf',
+					fontSize,
+					color: 0x333333,
+					outlineWidth: 0.25, outlineColor: 0xffffff,
+					leafOffset: 0.45 + 0.35, internalOffset: 0.6 + 0.35,
+					orient: node => {
+
+						// vertical plane through the node and its parent cone's axis;
+						// +x = horizontal direction from the parent's (x, z) to the node's
+						const p = position.get( node );
+						const q = node.parent ? position.get( node.parent ) : null;
+						const out = q ? new THREE.Vector3( p.x - q.x, 0, p.z - q.z ) : new THREE.Vector3( 1, 0, 0 );
+						if ( out.lengthSq() < 1e-12 ) out.set( 1, 0, 0 );
+						return basisQuaternion( out, UP );
+
+					},
+					camera,
+					billboard: false
+				} );
+				scene.add( labels.group );
+
 				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
 				renderer.setPixelRatio( window.devicePixelRatio );
 				renderer.setSize( window.innerWidth, window.innerHeight );
@@ -140,7 +184,7 @@
 				await renderer.init();
 
 				console.log( 'd33 backend:', renderer.backend.constructor.name,
-					'R(root):', R.get( root ).toFixed( 3 ),
+					'R(root):', R.get( root ).toFixed( 3 ), 'fontSize:', fontSize.toFixed( 3 ), 'px:', ( fontSize * pxPerUnit ).toFixed( 2 ), 'labels:', labels.count, 'flipped:', labels.flipped,
 					'nodes:', root.descendants().length, 'links:', root.links().length );
 
 				attachOrbit( camera, renderer.domElement, target );
@@ -148,7 +192,8 @@
 				register( {
 					renderer, scene, camera, marks, target,
 					expected: { nodes: root.descendants().length, links: root.links().length },
-					pickables: nodes.children
+					pickables: nodes.children,
+					labels
 				} );
 
 			}
@@ -259,6 +304,7 @@
 
 			function animate() {
 
+				labels.update( camera ); // no-op unless billboard: true
 				renderer.render( scene, camera );
 
 			}
