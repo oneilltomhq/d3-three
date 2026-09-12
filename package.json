@@ -6,6 +6,7 @@
 	"description": "D3 gallery examples lifted into real 3D with Three.js WebGPURenderer",
 	"scripts": {
 		"build:d3": "esbuild src/vendor/d3-entry.js --bundle --format=esm --outfile=examples/jsm/vendor/d3.js",
+		"test": "node --test test/pack3.test.mjs",
 		"e2e": "node test/e2e/puppeteer.js",
 		"e2e:make": "node test/e2e/puppeteer.js --make",
 		"e2e:twice": "node test/e2e/puppeteer.js --twice",

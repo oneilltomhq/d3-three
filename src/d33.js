@@ -278,6 +278,30 @@ function hits( raycaster, camera, ndc, object, pickables ) {
 
 }
 
+// Visibility pre-pass: a candidate whose centre is intercepted by a *nearer*
+// pickable (another leaf in front of it in a sphere packing) is not sampled
+// — that pixel belongs to the front one. Nothing else is excused: a candidate
+// with no pickable in front of it stays in and must then hit.
+function unoccluded( raycaster, camera, p, object, pickables ) {
+
+	raycaster.setFromCamera( new THREE.Vector2().copy( p.clone().project( camera ) ), camera );
+
+	const intersections = raycaster.intersectObjects( pickables, true );
+	if ( intersections.length === 0 ) return true;
+
+	let hit = intersections[ 0 ].object;
+
+	while ( hit ) {
+
+		if ( hit === object ) return true;
+		hit = hit.parent;
+
+	}
+
+	return intersections[ 0 ].distance >= raycaster.ray.origin.distanceTo( p );
+
+}
+
 function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 
 	const { scene } = state;
@@ -307,25 +331,47 @@ function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 
 	};
 
+	// Samples are drawn from the pickable node marks, so a page that passes
+	// leaves only (pack: containers are translucent, leaves are the targets)
+	// gets leaves sampled. Falls back to every node mark if none is pickable.
+	const pickableSet = new Set( pickables );
+	const candidates = nodeMarks.filter( m => pickableSet.has( m.object ) );
+	const samples = candidates.length > 0 ? candidates : nodeMarks;
+
+	// Per camera: the facing (normal) filter, then the visibility pre-pass
+	// over every remaining candidate, then up to PICK_SAMPLES of the visible
+	// ones. Walk order is rung 0's stride first (0, step, 2·step, …) and only
+	// then the offsets in between, so a page with nothing occluded samples
+	// exactly the marks it always did. Every sample must then hit.
 	const sampleFrom = ( camera ) => {
 
-		const eligible = nodeMarks.filter( m => facing( m, positions.get( m.id ), camera ) );
+		const eligible = samples.filter( m => facing( m, positions.get( m.id ), camera ) );
+		const visible = new Set( eligible.filter( m => unoccluded( raycaster, camera, positions.get( m.id ), m.object, pickables ) ) );
 		const step = Math.max( 1, Math.floor( eligible.length / PICK_SAMPLES ) );
 		const picked = [];
 
-		for ( let i = 0; i < eligible.length && picked.length < PICK_SAMPLES; i += step ) picked.push( eligible[ i ] );
+		for ( let offset = 0; offset < step && picked.length < PICK_SAMPLES; offset ++ ) {
 
-		return picked;
+			for ( let i = offset; i < eligible.length && picked.length < PICK_SAMPLES; i += step ) {
+
+				if ( visible.has( eligible[ i ] ) ) picked.push( eligible[ i ] );
+
+			}
+
+		}
+
+		return { picked, visible: visible.size };
 
 	};
 
 	const misses = [];
 	const sampledIds = new Set();
-	let hitA = 0, hitB = 0;
+	let hitA = 0, hitB = 0, visibleA = 0, visibleB = 0;
 
 	const cast = ( camera, key ) => {
 
-		const picked = sampleFrom( camera );
+		const { picked, visible } = sampleFrom( camera );
+		key === 'a' ? visibleA = visible : visibleB = visible;
 
 		for ( const mark of picked ) {
 
@@ -347,7 +393,8 @@ function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 	const sampled = sampledIds.size; // distinct marks raycast from either camera
 
 	return {
-		sampled, sampledA, sampledB, hitA, hitB, pickables: pickables.length, misses,
+		sampled, sampledA, sampledB, sampleSet: candidates.length > 0 ? 'pickables' : 'nodes', candidates: samples.length,
+		visibleA, visibleB, hitA, hitB, pickables: pickables.length, misses,
 		pass: sampledA > 0 && sampledB > 0 && hitA === sampledA && hitB === sampledB
 	};
 
