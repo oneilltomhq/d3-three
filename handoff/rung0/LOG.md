@@ -274,3 +274,14 @@ renders on WebGPU, the screenshot reproduces, and the depth gate fails honestly.
 - The picking gate currently raycasts `scene.children` recursively. Once examples
   add helpers/grids, those will occlude nodes; we may need a `pickables` layer in
   `register()`.
+
+## Director rulings (Fable, after review)
+
+- **Rasterizer.** d33 renders WebGPU on Dawn's SwiftShader; three-rs renders wgpu on
+  lavapipe. Screenshots are therefore visual anchors for three-rs, never a pixel grader.
+  The pixel-exact contract between the two projects is `marks/d3_<slug>.json` (positions,
+  counts, link endpoints). Record this in LADDER-FOR-THREE-RS.md when it is first written.
+- **Pickables.** `register()` gains an optional `pickables` list (defaults to the node/cell
+  mark objects); the picking gate raycasts only those, so grids and helpers cannot occlude.
+- Flag substitution (`--disable-vulkan-surface` for `--use-angle=vulkan`), exact puppeteer
+  pin, WebGPU warm-up and `--make` not blocking on gates are accepted as-is.
