@@ -150,6 +150,51 @@ three-rs if the director wants parity). `examples/`, `src/` (svgCamera,
 primitives, tween, path context), `ref/`, `test/e2e/`, `marks/`,
 `screenshots/`, `handoff/`, `DECISIONS.md`.
 
+## Facts about Three's harness, measured 2026-09-12 (so rung 0 need not re-read it)
+
+`~/src/vendor/three.js/test/e2e/puppeteer.js`, 613 lines. What the copy
+in `test/e2e/` here must reproduce:
+
+- Chromium is launched via puppeteer (`~/.cache/puppeteer` already has
+  chrome + chrome-headless-shell; three.js `node_modules` is installed,
+  node v24.13.0). Flags: `--hide-scrollbars --enable-unsafe-webgpu
+  --enable-features=Vulkan --disable-vulkan-surface --ignore-gpu-blocklist
+  --disable-gpu-driver-bug-workarounds --disable-gpu-watchdog --no-sandbox`.
+- It sets `VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json`:
+  the e2e run uses lavapipe (software Vulkan), not the Intel GPU. Keep
+  that; it is what makes the screenshots reproducible. Confirm the file
+  exists on this machine in rung 0.
+- Viewport 400×250 at `deviceScaleFactor`-free `viewScale` 2 (i.e. the
+  page is 800×500), screenshot then `Image.scale(1/2)`. For d33 the page
+  size is the SVG's own width×height, still ×2 then ×½.
+- `image.js` `compare(other, diff, threshold=0.1)`: per-pixel squared RGB
+  distance normalised to [0,1], counted if > threshold². Pass when the
+  count is < 0.1% of pixels (`maxDifferentPixels`). Not pixelmatch; it is
+  Three's own. Copy the file byte for byte (deps: pngjs, jpeg-js).
+- Page flow: `goto` → evaluate `clean-page.js` (hides `#info`, lil-gui,
+  buttons) → wait network idle 2 s → set `window._renderStarted = true`
+  and wait for `_renderFinished` (the injected RAF fires the callback
+  once, then the page is screenshotted) with a 5 s render timeout.
+- `deterministic-injection.js` is injected with `evaluateOnNewDocument`.
+  It also intercepts requests for `build/three.webgpu.js` and serves a
+  patched copy (`Math.random() * 0xffffffff` → `Math._random()`, and
+  `trackTimestamp` forced false). The d33 pages import
+  `three/webgpu` from the vendored `build/`; keep the same patch.
+- Static server: `~/src/vendor/three.js/utils/server.js`, port 1234,
+  `createServer(root)`. Point it at this repo, and add a route or symlink
+  for `/three/build/*` to the vendored build and `/gallery/*` to
+  `~/src/vendor/d3-gallery/notebooks` so notebooks' `files/` load locally.
+- Output on failure: `output-screenshots/<name>-actual.jpg`,
+  `-expected.jpg`, `-diff.jpg` (red = differing pixels).
+
+## State on 2026-09-12 20:45
+
+- `~/src/projects/d33` created in the bare-worktree layout; `main` holds
+  the handoff (that one bootstrap commit was made in `main/`; none after).
+- Worktree `rung0/` on branch `rung0` exists. Start there. Nothing else
+  has been written: no package.json, no harness copy, no reference
+  renderer. `resvg` is not installed; use `@resvg/resvg-js` from npm.
+
 ## Out of scope
 
 Anything in d3's DOM half beyond what a rung's scripted event needs (no
