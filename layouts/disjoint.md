@@ -40,48 +40,33 @@ Proof that the layout itself is deterministic, not only the harness render:
 processes with NO deterministic injection (real `Math.random`, real clocks,
 free-running RAF), reads `window.d33.report()` from each and compares every
 position with `===`; it also compares against the harness's
-`marks/d3_disjoint.json`. All three agree: 611/611 marks and 336/336 labels,
-0 differ, max |Δ| 0.
+`marks/d3_disjoint.json`. All three agree: 611/611 marks, 0 differ, max |Δ| 0.
 
 ## Marks
 
-- node: sphere `Mesh` per node (336), radius **0.25** as d3_force (the notebook's
-  r 5 is 0.15 of a 20-unit disc; 0.25 keeps the spheres 3 px at 400×250 and is the
-  radius the picking gate was tuned at). Colour `schemeCategory10` by group
+- node: sphere `Mesh` per node (336), radius **0.18** (the notebook's r 5 is
+  0.15 of its 680 px disc scaled to 20 units; d3_force's 0.25 read too large for
+  336 nodes at pitch ~1, so the director moved it to 0.18 — 2.3 px at 400×250,
+  picking still 20/20 from both cameras). Colour `schemeCategory10` by group
   (Cited Works blue, Citing Patents orange); the notebook's white 1.5 px outline
   is not reproduced (two objects per datum); `MeshStandardNodeMaterial` with
   `emissive` = the colour at intensity 0.18 instead. `expected.nodes = 336`.
 - link: fat line (`Line2`) per link (275), straight, two points, `#999` opacity
   0.6, linewidth `sqrt(value)` = 1.414 px for every link (one shared
   `Line2NodeMaterial`). `a`, `b` = node ids. `expected.links = 275`.
-- labels: all 336, planar in camera A's plane exactly as d3_force (quaternion
-  copied once at layout time, offset +x along camera right by node radius + 0.1
-  = 0.35, anchor start; `hierarchyLabels` fed a `{ descendants }` shim over
-  `{ data: { label } }` wrappers). Two numbers moved from d3_force, both
-  recorded in the page:
-  - **text**: the id, cut at 32 characters with `…` (`slice(0, 31).trimEnd() +
-    '…'`). Patent ids are 19 characters and untouched; the 100 cited works are
-    paper titles of 19–250 characters that the notebook never draws (tooltip
-    only). Drawn in full a 250-character title is ~60 world units against a
-    20-unit cloud, and the camera refit to label tips shrinks the graph to a
-    third of the frame. The full id stays on `mesh.name` and, via `id`, in
-    `marks/d3_disjoint.json`; the dumped label `text` is the drawn string.
-  - **size**: `LABEL_PX = 3.5` (d3_force: 8). Font size `min(3.5 px at target
-    distance, 0.6 · closest pair 0.996)` = **0.337** world units = 3.5 px at
-    400×250, 14 px in the 1600×1000 eyeball render. At 8 px (6.2 px after the
-    pitch cap) 336 labels blanket the 336 marks and neither reads; at 3.5 px the
-    spheres, links and the small peripheral components show through and the
-    labels are legible at 1600×1000. Quaternion per label in
-    `marks/d3_disjoint.json` (`labels[].q`); no label is mirror-flipped.
-  `expected.labels = 336`.
+- labels: **none**. The notebook draws no text — ids are `<title>` tooltips
+  only, 236 patent serial numbers and 100 paper titles up to 250 characters. A
+  first build drew all 336 as planar labels (as d3_force) and they buried the
+  marks at any legible size; the director's ruling was to drop them. The page
+  registers `expected.labels = 0` and no labels object; the labels gate reports
+  `count 0 / 0, note 'no labels registered'` and passes. The id stays on
+  `mesh.name` (nodes) and `'<source> - <target>'` (links).
 
 ## Camera
 
 fov 40, **elevation 15°, azimuth 35°**, fill 0.85 — d3_force's pair, unchanged —
-refitted (3 iterations) to the nodes plus the far ends of the labels so no name
-is clipped. Angle areas 0.441 / 0.374. Picking 20/20 from both cameras on the
-first run (301 of 336 nodes unoccluded from each camera; the pre-pass skips the
-35 whose centre pixel belongs to a nearer sphere).
+fitted once to the projected nodes (no labels to refit for). Angle areas
+0.444 / 0.449. Picking 20/20 from both cameras (21 distinct nodes sampled).
 
 Depth gate: 0.979. The positioning forces are isotropic so the cloud is nearly
 a ball; if the ratio drops towards 0 the `forceZ` is missing.

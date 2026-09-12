@@ -35,9 +35,8 @@
 			import { fatLine, lineMaterial } from '/src/link.js';
 			import { frameCamera } from '/src/frame.js';
 			import { attachOrbit } from '/src/orbit.js';
-			import { hierarchyLabels } from '/src/labels.js';
 
-			let renderer, scene, camera, labels;
+			let renderer, scene, camera;
 
 			await init();
 
@@ -97,7 +96,9 @@
 				// outline has no one-object counterpart (a second back-face sphere
 				// would be two objects per datum); a light emissive lifts the
 				// colour off the grey links instead.
-				const NODE_R = 0.25;
+				// r 0.18: the notebook's r 5 is 0.15 of its 680 px disc; d3_force's
+				// 0.25 read too large for a cloud of 336 nodes at pitch ~1.
+				const NODE_R = 0.18;
 				const nodeGeometry = new THREE.SphereGeometry( NODE_R, 16, 12 );
 				const materials = new Map(); // group -> material
 
@@ -169,84 +170,14 @@
 				for ( const p of nodePoints ) box.expandByPoint( p );
 
 				const view = { elevation: 15, azimuth: 35, fill: 0.85 };
-				let target = frameCamera( camera, box, { ...view, points: nodePoints } );
+				const target = frameCamera( camera, box, { ...view, points: nodePoints } );
 
-				/* ---------------- labels: one Text per node (src/labels.js) ----------------
-				   Planar: every label lies in the plane facing camera A's initial
-				   direction (its quaternion is copied from the camera once, at
-				   layout time, not per frame), offset +x (camera right) by
-				   NODE_R + 0.1, anchor start. Em size capped at LABEL_PX at the
-				   target distance and at 0.6 of the closest two nodes. The camera
-				   is then refitted to the labels' far ends so no name is clipped. */
-
-				// d3_force labels 77 nodes at 8 px; this cloud has 336, four times as
-				// many in the same frame, and at 8 px (6.2 px after the pitch cap)
-				// the labels blanket the marks so that neither reads. 3.5 px at the
-				// target distance is 14 px in the 1600x1000 eyeball render: legible,
-				// and the spheres and links show through.
-				const LABEL_PX = 3.5;
-				// Label text is the id. Patent ids are 19 characters; the 100 cited
-				// works are paper titles up to 250 characters, which the notebook
-				// shows only as a <title> tooltip. Drawn in full they would be up
-				// to 60 world units long against a 20-unit cloud and the camera
-				// refit below would shrink the graph to a third of the frame, so a
-				// title longer than LABEL_CHARS is cut there with an ellipsis. The
-				// full id stays on the mesh (`mesh.name`) and in the marks JSON.
-				const LABEL_CHARS = 32;
-				const labelText = id => id.length > LABEL_CHARS ? id.slice( 0, LABEL_CHARS - 1 ).trimEnd() + '…' : id;
-				let pitch = Infinity;
-				for ( let i = 0; i < nodes.length; i ++ ) for ( let j = i + 1; j < nodes.length; j ++ ) {
-
-					pitch = Math.min( pitch, nodePoints[ i ].distanceTo( nodePoints[ j ] ) );
-
-				}
-
-				const leafOffset = NODE_R + 0.1;
-				let pxPerUnit, fontSize;
-
-				const fit = () => {
-
-					pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
-					fontSize = Math.min( LABEL_PX / pxPerUnit, 0.6 * pitch );
-
-				};
-
-				fit();
-
-				const right = new THREE.Vector3();
-
-				for ( let i = 0; i < 3; i ++ ) {
-
-					// far end of each label: ~0.5 em per glyph of Roboto, along camera right
-					right.setFromMatrixColumn( camera.matrixWorld, 0 ).normalize();
-					const tips = nodes.map( n => position.get( n ).clone()
-						.addScaledVector( right, leafOffset + 0.5 * fontSize * labelText( n.id ).length ) );
-					target = frameCamera( camera, box, { ...view, points: nodePoints.concat( tips ) } );
-					fit();
-
-				}
-
-				// hierarchyLabels wants a d3 hierarchy; a graph has none. Give it
-				// the one thing it reads — `root.descendants()` — as a flat list
-				// of childless wrappers `{ data: node }`, so every label is a
-				// "leaf": anchored start, offset outward along +x.
-				const wrappers = nodes.map( n => ( { data: { label: labelText( n.id ) } } ) );
-				const labelIds = new Map( wrappers.map( ( w, i ) => [ w, ids.get( nodes[ i ] ) ] ) );
-				const labelPositions = new Map( wrappers.map( ( w, i ) => [ w, nodePoints[ i ] ] ) );
-				const facing = camera.quaternion.clone();
-
-				labels = await hierarchyLabels( { descendants: () => wrappers }, labelIds, labelPositions, {
-					font: '/examples/fonts/Roboto-Regular.ttf',
-					fontSize,
-					color: 0x333333,
-					outlineWidth: 0.25, outlineColor: 0xffffff,
-					leafOffset, internalOffset: leafOffset,
-					orient: () => facing,
-					camera,
-					billboard: false,
-					text: 'label'
-				} );
-				scene.add( labels.group );
+				/* ---------------- labels: none ----------------
+				   The notebook draws no text; node ids are `<title>` tooltips only
+				   (236 patent serial numbers and 100 paper titles up to 250
+				   characters). Drawn as 336 planar labels they buried the marks,
+				   so the page labels nothing: `expected.labels = 0`, and the id
+				   stays on `mesh.name`. */
 
 				/* ---------------- renderer ---------------- */
 
@@ -261,20 +192,16 @@
 				console.log( 'd33 backend:', renderer.backend.constructor.name,
 					'ticks:', ticks, 'scale:', scale.toFixed( 5 ),
 					'extent:', extent.map( e => e.toFixed( 3 ) ).join( ' x ' ),
-					'pitch:', pitch.toFixed( 3 ), 'fontSize:', fontSize.toFixed( 3 ), 'px:', ( fontSize * pxPerUnit ).toFixed( 2 ),
-					'labels:', labels.count, 'flipped:', labels.flipped,
 					'nodes:', nodes.length, 'links:', links.length );
 
 				const controls = attachOrbit( camera, renderer.domElement, target );
 
-				// dev hook (tools/flip.js): orbit by script and count label flips
-				window.d33dev = { camera, controls, labels };
+				window.d33dev = { camera, controls };
 
 				register( {
 					renderer, scene, camera, marks, target,
-					expected: { nodes: data.nodes.length, links: data.links.length },
-					pickables: nodeGroup.children,
-					labels
+					expected: { nodes: data.nodes.length, links: data.links.length, labels: 0 },
+					pickables: nodeGroup.children
 				} );
 
 			}
@@ -331,7 +258,6 @@
 
 			function animate() {
 
-				labels.update( camera ); // per-frame mirror flip (plane fixed); billboard if enabled
 				renderer.render( scene, camera );
 
 			}
