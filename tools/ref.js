@@ -34,6 +34,12 @@ if ( ! target ) {
 const slug = path.basename( target ).replace( /\.v\d+$/, '' );
 const outFile = process.argv[ 3 ] || `ref/${ slug }.png`;
 
+// Cells that are Observable inputs (`viewof tile` = Inputs.select(...)) have no
+// value here; REF_VALUES supplies them as a JSON object of JS expressions
+// evaluated in the page with `d3` in scope, e.g.
+//   REF_VALUES='{"tile":"d3.treemapBinary"}' node tools/ref.js hierarchies/treemap.v2
+const extraValues = JSON.parse( process.env.REF_VALUES || '{}' );
+
 /* The notebook's cell wiring: cell name -> { deps, fn } */
 
 function cellDefinitions( source ) {
@@ -103,13 +109,15 @@ await page.evaluate( async url => {
 
 }, `http://localhost:${ port }/examples/jsm/vendor/d3.js` );
 
-const size = await page.evaluate( async ( script, cells, filesBase ) => {
+const size = await page.evaluate( async ( script, cells, filesBase, extra ) => {
 
 	eval( script ); // eslint-disable-line no-eval
 
 	const values = {
 		d3: window.d3,
 		width: 928,
+		// Observable's DOM.uid: a unique id usable as `id` / `url(#id)`
+		DOM: { uid: ( () => { let n = 0; return name => { const id = `O-${ name || '' }-${ ++ n }`; return { id, href: `#${ id }`, toString: () => `url(#${ id })` }; }; } )() },
 		FileAttachment: name => ( {
 			json: () => fetch( filesBase + name ).then( r => r.json() ),
 			text: () => fetch( filesBase + name ).then( r => r.text() ),
@@ -118,6 +126,12 @@ const size = await page.evaluate( async ( script, cells, filesBase ) => {
 			url: () => filesBase + name
 		} )
 	};
+
+	for ( const [ name, expression ] of Object.entries( extra ) ) {
+
+		values[ name ] = ( 0, eval )( `( d3 => ( ${ expression } ) )` )( window.d3 ); // eslint-disable-line no-eval
+
+	}
 
 	const call = async name => {
 
@@ -141,7 +155,7 @@ const size = await page.evaluate( async ( script, cells, filesBase ) => {
 	const rect = node.getBoundingClientRect();
 	return { width: Math.ceil( rect.width ), height: Math.ceil( rect.height ) };
 
-}, script, Object.fromEntries( cells ), `http://localhost:${ port }/gallery/${ target }/files/` );
+}, script, Object.fromEntries( cells ), `http://localhost:${ port }/gallery/${ target }/files/`, extraValues );
 
 await page.setViewport( { width: size.width, height: size.height } );
 

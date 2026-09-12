@@ -7,8 +7,9 @@
 //   marks:    one entry per datum (HANDOFF §C.11)
 //             { id, kind: 'node' | 'link' | 'cell', object, a?, b? }
 //             `a`/`b` are the ids of the two endpoint marks of a link.
-//   expected: { nodes, links } straight off the d3 hierarchy
-//             ( root.descendants().length, root.links().length ) (§C.12)
+//   expected: { nodes, links, cells } straight off the d3 hierarchy
+//             ( root.descendants().length, root.links().length ) (§C.12);
+//             `cells` defaults to 0.
 //   target:   optional orbit target; defaults to the centroid of node/cell marks.
 //   normal:   optional on a mark (unit Vector3 or [x,y,z]); the picking gate
 //             samples a mark from a camera only if it faces it
@@ -16,9 +17,11 @@
 //   pickables: optional array of Object3D the picking gate is allowed to hit.
 //             Defaults to the node/cell mark objects, so grids, helpers and
 //             link geometry can never occlude a node (rung 0 director ruling).
-//   labels:   optional `{ count, dump? }` (the object `hierarchyLabels()` in
-//             src/labels.js returns). Labels are not marks; the labels gate
-//             checks `count === nodes`, and `dump()` — one entry per label,
+//   labels:   optional `{ count, expected?, dump? }` (the object
+//             `hierarchyLabels()` in src/labels.js returns). Labels are not
+//             marks; the labels gate checks `count === expected` when the page
+//             supplies `expected` (a treemap labels leaves only), otherwise
+//             `count === nodes`, and `dump()` — one entry per label,
 //             `{ id, text, x, y, z, q: [x,y,z,w], anchorX }` — is written to
 //             the marks JSON as a separate `labels` array (rung 3).
 //
@@ -33,7 +36,7 @@ const state = {
 	scene: null,
 	camera: null,
 	marks: [],
-	expected: { nodes: 0, links: 0 },
+	expected: { nodes: 0, links: 0, cells: 0 },
 	target: null,
 	pickables: null,
 	labels: null
@@ -50,7 +53,7 @@ export function register( options ) {
 	state.scene = options.scene || null;
 	state.camera = options.camera || null;
 	state.marks = options.marks || [];
-	state.expected = options.expected || { nodes: 0, links: 0 };
+	state.expected = options.expected || { nodes: 0, links: 0, cells: 0 };
 	state.target = options.target || null;
 	state.pickables = options.pickables || null;
 	state.labels = options.labels || null;
@@ -214,24 +217,31 @@ function countsGate( marks ) {
 
 	const nodes = marks.filter( m => m.kind === 'node' ).length;
 	const links = marks.filter( m => m.kind === 'link' ).length;
+	const cells = marks.filter( m => m.kind === 'cell' ).length;
 	const expectedNodes = state.expected.nodes | 0;
 	const expectedLinks = state.expected.links | 0;
+	const expectedCells = state.expected.cells | 0;
 
 	return {
-		nodes, links, expectedNodes, expectedLinks,
-		pass: nodes === expectedNodes && links === expectedLinks
+		nodes, links, cells, expectedNodes, expectedLinks, expectedCells,
+		pass: nodes === expectedNodes && links === expectedLinks && cells === expectedCells
 	};
 
 }
 
 // Every node carries a label (rung 3). Labels are not marks, so this is a
-// separate count: the number of `Text` members registered vs the node marks.
+// separate count: the number of `Text` members registered vs the node marks —
+// or vs the page's own `labels.expected` when it labels a subset (a treemap
+// labels leaves only, and only those wide enough). `expectedNodes` keeps its
+// name because the harness prints it.
 function labelsGate( marks ) {
 
 	const nodes = marks.filter( m => m.kind === 'node' ).length;
 	const count = state.labels ? state.labels.count | 0 : 0;
+	const fromPage = state.labels && state.labels.expected !== undefined;
+	const expected = fromPage ? state.labels.expected | 0 : nodes;
 
-	const out = { count, expectedNodes: nodes, pass: count === nodes };
+	const out = { count, expectedNodes: expected, source: fromPage ? 'page' : 'nodes', pass: count === expected };
 	if ( ! state.labels ) out.note = 'no labels registered';
 	return out;
 
@@ -278,7 +288,7 @@ function hits( raycaster, camera, ndc, object, pickables ) {
 
 }
 
-function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
+function pickingGate( solidMarks, positions, cameraA, cameraB ) {
 
 	const { scene } = state;
 
@@ -287,7 +297,7 @@ function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 	const pickables = state.pickables
 		|| state.marks.filter( m => m.kind !== 'link' ).map( m => m.object );
 
-	if ( nodeMarks.length === 0 || scene === null ) {
+	if ( solidMarks.length === 0 || scene === null ) {
 
 		return { sampled: 0, hitA: 0, hitB: 0, misses: [], pass: false, note: 'no node marks' };
 
@@ -309,7 +319,7 @@ function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 
 	const sampleFrom = ( camera ) => {
 
-		const eligible = nodeMarks.filter( m => facing( m, positions.get( m.id ), camera ) );
+		const eligible = solidMarks.filter( m => facing( m, positions.get( m.id ), camera ) );
 		const step = Math.max( 1, Math.floor( eligible.length / PICK_SAMPLES ) );
 		const picked = [];
 
@@ -382,10 +392,8 @@ const api = {
 		const marks = state.marks;
 		const positions = markPositions();
 
-		const nodeMarks = marks.filter( m => m.kind === 'node' );
 		const solidMarks = marks.filter( m => m.kind !== 'link' ); // nodes + cells
 		const solidPositions = solidMarks.map( m => positions.get( m.id ) );
-		const nodePositions = nodeMarks.map( m => positions.get( m.id ) );
 
 		const cameraA = state.camera;
 		const target = state.target
@@ -398,10 +406,10 @@ const api = {
 			depth: depthGate( solidPositions ),
 			counts: countsGate( marks ),
 			angle: cameraA && cameraB
-				? angleGate( nodePositions, cameraA, cameraB )
+				? angleGate( solidPositions, cameraA, cameraB )
 				: { pass: false, note: 'no camera registered' },
 			picking: cameraA && cameraB
-				? pickingGate( nodeMarks, positions, cameraA, cameraB )
+				? pickingGate( solidMarks, positions, cameraA, cameraB )
 				: { pass: false, note: 'no camera registered' },
 			labels: labelsGate( marks )
 		};
@@ -419,7 +427,7 @@ const api = {
 
 			} ),
 			labels: state.labels && typeof state.labels.dump === 'function' ? state.labels.dump() : [],
-			expected: { nodes: state.expected.nodes | 0, links: state.expected.links | 0 },
+			expected: { nodes: state.expected.nodes | 0, links: state.expected.links | 0, cells: state.expected.cells | 0 },
 			target: { x: target.x, y: target.y, z: target.z },
 			gates,
 			env: environment()
