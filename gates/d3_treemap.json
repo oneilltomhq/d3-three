@@ -4,31 +4,32 @@
 		"depth": {
 			"extents": [
 				19.32409012131716,
-				5.1000000000000005,
+				0,
 				19.020797227036397
 			],
-			"ratio": 0.2639192825112108,
-			"pass": true
+			"ratio": 0,
+			"pass": true,
+			"note": "planar by ruling"
 		},
 		"counts": {
 			"nodes": 0,
 			"links": 0,
-			"cells": 252,
+			"cells": 220,
 			"expectedNodes": 0,
 			"expectedLinks": 0,
-			"expectedCells": 252,
+			"expectedCells": 220,
 			"pass": true
 		},
 		"angle": {
 			"a": {
-				"width": 0.5135701623333129,
-				"height": 0.7349143686904263,
-				"area": 0.37743009162942637
+				"width": 0.5962013020534049,
+				"height": 0.7686486863591492,
+				"area": 0.45826934762896404
 			},
 			"b": {
-				"width": 0.5192121148762427,
-				"height": 0.7101366967934192,
-				"area": 0.36871157619334033
+				"width": 0.6061241220566489,
+				"height": 0.8046331930517414,
+				"area": 0.4877075877161248
 			},
 			"threshold": 0.01,
 			"pass": true
@@ -39,13 +40,13 @@
 			"sampledB": 20,
 			"hitA": 20,
 			"hitB": 20,
-			"pickables": 252,
+			"pickables": 220,
 			"misses": [],
 			"pass": true
 		},
 		"labels": {
-			"count": 27,
-			"expectedNodes": 27,
+			"count": 30,
+			"expectedNodes": 30,
 			"source": "page",
 			"pass": true
 		},
@@ -54,12 +55,13 @@
 	"expected": {
 		"nodes": 0,
 		"links": 0,
-		"cells": 252
+		"cells": 220,
+		"labels": 30
 	},
 	"target": {
-		"x": 10.538853122289773,
-		"y": 2.292641147191262,
-		"z": -9.078893806513628
+		"x": 9.493973686367065,
+		"y": -0.954473897442721,
+		"z": -8.128119518469626
 	},
 	"env": {
 		"backend": "WebGPUBackend",

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 	<head>
-		<title>d33 - treemap as stacked partitions</title>
+		<title>d33 - treemap, flat in the 3D world</title>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<style>
@@ -11,7 +11,7 @@
 	</head>
 	<body>
 
-		<div id="info">d33 - d3 treemap (flare) lifted to stacked partitions: every node is a slab, leaves' top faces are the treemap</div>
+		<div id="info">d33 - d3 treemap (flare), the notebook's chart rendered flat inside the 3D world (planar by ruling)</div>
 
 		<script type="importmap">
 			{
@@ -40,23 +40,18 @@
 			let renderer, scene, camera, labels;
 
 			/* ---------------- layouts/treemap.md ----------------
-			   d3.treemap decides x0, y0, x1, y1 of every node (leaves and internal
-			   nodes alike), the tiling, the padding and the sort — run exactly as
-			   the notebook. The stack adds one axis: a node at depth d is a slab
-			   over its own rect sitting on its parent's slab, so the leaves' top
-			   faces are the notebook's treemap. Slabs are STEP thick except the
-			   ten packages (depth 1), which are PLINTH thick: that is where the
-			   stack gets its height (depth gate), while the steps between leaves
-			   stay low enough that no leaf is shadowed by a taller neighbour
-			   from either gate camera at 60° (see layouts/treemap.md). */
+			   Planar by ruling (handoff/rung0/LOG.md): the notebook's treemap,
+			   drawn faithfully in the xz plane of the 3D world. d3.treemap with
+			   treemapBinary decides every rect exactly as the notebook; the
+			   leaves — the only nodes the notebook draws — are thin lit tiles. */
 
 			const WIDTH = 1154, HEIGHT = 1154;         // the notebook's size
-			const SIDE = 20;                           // world units of the square footprint
+			const SIDE = 20;                           // world units of the square
 			const S = SIDE / WIDTH;                    // notebook px -> world units
-			const STEP = 0.7;                          // slab thickness (world units)
-			const PLINTH = 3.0;                        // depth-1 slab thickness
+			const THICK = 0.015 * SIDE;                // tile thickness: 1.5 % of the width
 			const FONT = '/examples/fonts/Roboto-Regular.ttf';
-			const LABEL_PX = 6;                        // label em at the target distance, 400x250
+			const LABEL_PX = 5;                        // label em at the target distance, 400x250
+			const LINE = 0.9;                          // the notebook's 0.9em line pitch
 			const LABEL_PAD_PX = 3;                    // the notebook's `x = 3`
 
 			await init();
@@ -88,6 +83,7 @@
 				const data = await fetch( '/gallery/hierarchies/treemap.v2/files/flare.json' ).then( r => r.json() );
 
 				const color = d3.scaleOrdinal( data.children.map( d => d.name ), d3.schemeTableau10 );
+				const format = d3.format( ',d' );
 
 				const root = d3.treemap()
 					.tile( d3.treemapBinary )
@@ -98,15 +94,11 @@
 					.sum( d => d.value )
 					.sort( ( a, b ) => b.value - a.value ) );
 
-				const H = root.height;
-				const thick = depth => depth === 1 ? PLINTH : STEP;
-				const base = []; // bottom of the slab at each depth
-				for ( let d = 0, y = 0; d <= H; d ++ ) { base[ d ] = y; y += thick( d ); }
-				const TOP = base[ H ] + thick( H );
+				const leaves = root.leaves();
 
 				// notebook (x, y) -> world (x, z): x -> x, y -> z shifted so the
-				// footprint spans z in [-SIDE, 0]; the notebook's top edge is the
-				// far edge from camera A and its left edge is the left edge.
+				// square spans z in [-SIDE, 0]; the notebook's top edge is the far
+				// edge from camera A and its left edge is the left edge.
 				const toWorld = ( x, y ) => new THREE.Vector3( x * S, 0, y * S - SIDE );
 
 				/* ---------------- scene ---------------- */
@@ -122,27 +114,28 @@
 
 				camera = new THREE.PerspectiveCamera( 35, window.innerWidth / window.innerHeight, 0.1, 4000 );
 
-				/* ---------------- marks: one Mesh(BoxGeometry) per descendant ----------------
-				   A unit box hanging below its origin, scaled to (width, t, depth)
-				   and placed at the centre of the slab's TOP face: the mark
-				   position (getWorldPosition) is the cell's own pixel — the point
-				   the picking gate raycasts — and the world-space footprint is
-				   exactly the rect. Internal slabs are covered by their children
-				   from above by construction, so they carry a downward `normal`:
-				   no elevated camera samples them, the gate samples the 220
-				   leaves (the notebook's own marks). */
+				/* ---------------- marks: one Mesh(BoxGeometry) per leaf ----------------
+				   A unit box hanging below its origin, scaled to (width, THICK,
+				   height) and placed at the centre of its top face, so the mark
+				   position is the tile's own pixel and the world-space footprint
+				   is exactly the notebook rect. */
 
 				const unitBox = new THREE.BoxGeometry( 1, 1, 1 ).translate( 0, - 0.5, 0 );
-				const DOWN = [ 0, - 1, 0 ];
+				const UP = [ 0, 1, 0 ];
 				const white = new THREE.Color( 0xffffff );
-				const materials = new Map(); // key -> material
+				const materials = new Map(); // package -> material
 
-				const material = ( key, hex, mix ) => {
+				const pkg = d => { while ( d.depth > 1 ) d = d.parent; return d.data.name; };
+
+				const material = node => {
+
+					const key = pkg( node );
 
 					if ( ! materials.has( key ) ) {
 
+						// the notebook's fill at fill-opacity 0.6 on white
 						materials.set( key, new THREE.MeshStandardNodeMaterial( {
-							color: new THREE.Color( hex ).lerp( white, mix ), roughness: 0.75, metalness: 0
+							color: new THREE.Color( color( key ) ).lerp( white, 0.4 ), roughness: 0.75, metalness: 0
 						} ) );
 
 					}
@@ -151,66 +144,43 @@
 
 				};
 
-				const pkg = d => { while ( d.depth > 1 ) d = d.parent; return d.data.name; };
-
 				const cells = new THREE.Group();
 				cells.name = 'cells';
 				scene.add( cells );
 
 				const ids = new Map();
-				root.each( ( node, i ) => ids.set( node, 'c' + i ) );
+				leaves.forEach( ( leaf, i ) => ids.set( leaf, 'c' + i ) );
 
 				const marks = [];
-				const face = new Map(); // node -> its slab's top y
 
-				for ( const node of root.descendants() ) {
+				for ( const leaf of leaves ) {
 
-					const leaf = ! node.children;
-					const w = ( node.x1 - node.x0 ) * S;
-					const d = ( node.y1 - node.y0 ) * S;
-					const t = thick( node.depth );
-					const y1 = base[ node.depth ] + t;
-
-					// leaves: the notebook's fill at fill-opacity 0.6 on white;
-					// internal slabs: the full hue, so the walls under a step and
-					// the package plinths read darker than the tiles; root: #ddd.
-					const mat = node.depth === 0
-						? material( 'root', 0xdddddd, 0 )
-						: leaf
-							? material( 'leaf:' + pkg( node ), color( pkg( node ) ), 0.4 )
-							: material( 'inner:' + pkg( node ), color( pkg( node ) ), 0.1 );
-
-					const mesh = new THREE.Mesh( unitBox, mat );
-					mesh.scale.set( w, t, d );
-					mesh.position.copy( toWorld( ( node.x0 + node.x1 ) / 2, ( node.y0 + node.y1 ) / 2 ) );
-					mesh.position.y = y1;
-					mesh.name = node.ancestors().reverse().map( a => a.data.name ).join( '.' );
+					const mesh = new THREE.Mesh( unitBox, material( leaf ) );
+					mesh.scale.set( ( leaf.x1 - leaf.x0 ) * S, THICK, ( leaf.y1 - leaf.y0 ) * S );
+					mesh.position.copy( toWorld( ( leaf.x0 + leaf.x1 ) / 2, ( leaf.y0 + leaf.y1 ) / 2 ) );
+					mesh.position.y = THICK;
+					mesh.name = leaf.ancestors().reverse().map( a => a.data.name ).join( '.' );
 					cells.add( mesh );
 
-					face.set( node, y1 );
-					const mark = { id: ids.get( node ), kind: 'cell', object: mesh };
-					if ( ! leaf ) mark.normal = DOWN;
-					marks.push( mark );
+					marks.push( { id: ids.get( leaf ), kind: 'cell', object: mesh, normal: UP } );
 
 				}
 
 				// The notebook's 1 px gaps are 0.017 world units here — sub-pixel —
-				// so each leaf's top rect is outlined in white (the gap's colour),
-				// the way the gaps separate same-coloured neighbours in 2D. Not
-				// marks; one closed Line per leaf, in its own group.
+				// so each tile's top rect is outlined in white (the gap's colour).
+				// Not marks; one closed Line per leaf, in its own group.
 				const outlines = new THREE.Group();
 				outlines.name = 'outlines';
 				scene.add( outlines );
 
 				const outlineMaterial = new THREE.LineBasicNodeMaterial( { color: 0xffffff } );
-				const LIFT = 0.012; // above the face, so the loop is never z-fought
+				const LIFT = 0.012; // above the face, so nothing z-fights
 
-				for ( const leaf of root.leaves() ) {
+				for ( const leaf of leaves ) {
 
-					const y = face.get( leaf ) + LIFT;
 					const a = toWorld( leaf.x0, leaf.y0 ), b = toWorld( leaf.x1, leaf.y0 );
 					const c = toWorld( leaf.x1, leaf.y1 ), e = toWorld( leaf.x0, leaf.y1 );
-					for ( const p of [ a, b, c, e ] ) p.y = y;
+					for ( const p of [ a, b, c, e ] ) p.y = THICK + LIFT;
 
 					const loop = new THREE.Line( new THREE.BufferGeometry().setFromPoints( [ a, b, c, e, a ] ), outlineMaterial );
 					loop.name = 'outline ' + leaf.data.name;
@@ -220,17 +190,18 @@
 
 				/* ---------------- camera ---------------- */
 
-				const box = new THREE.Box3( new THREE.Vector3( 0, 0, - SIDE ), new THREE.Vector3( SIDE, TOP, 0 ) );
+				const box = new THREE.Box3( new THREE.Vector3( 0, 0, - SIDE ), new THREE.Vector3( SIDE, THICK + LIFT, 0 ) );
 
-				const view = { elevation: 60, azimuth: 40, fill: 0.85 };
+				const view = { elevation: 55, azimuth: 20, fill: 0.85 };
 				const target = frameCamera( camera, box, view );
 
-				/* ---------------- labels: leaves only, lying on their top faces ----------------
-				   The notebook's first text line (name split on capitals) at
-				   `x = 3`, em = LABEL_PX at the target distance at 400x250 (about
-				   0.87 of that on screen after the 60° foreshortening); only on
-				   leaves whose rect holds it
-				   (height >= 1.2 em, width >= measured text width + 2 pads). */
+				/* ---------------- labels: as the notebook, lying in the top plane ----------------
+				   One multi-line Text per leaf: the name split on capitals and
+				   spaces, one word per line, then the formatted value, at the
+				   rect's top-left + 3 px, 0.9 em per line; only where all the
+				   lines fit (width of the widest line + 2 pads, height of the
+				   block + pad), measured from the TTF. The em is LABEL_PX at the
+				   target distance at 400x250. */
 
 				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
 				const fontSize = LABEL_PX / pxPerUnit;
@@ -257,18 +228,19 @@
 				const labelIds = new Map();
 				const anchors = new Map();
 
-				for ( const leaf of root.leaves() ) {
+				for ( const leaf of leaves ) {
 
-					const line = leaf.data.name.split( /(?=[A-Z][a-z])|\s+/g )[ 0 ];
-					const w = ( leaf.x1 - leaf.x0 ) * S, d = ( leaf.y1 - leaf.y0 ) * S;
+					const lines = leaf.data.name.split( /(?=[A-Z][a-z])|\s+/g ).concat( format( leaf.value ) );
+					const w = ( leaf.x1 - leaf.x0 ) * S, h = ( leaf.y1 - leaf.y0 ) * S;
+					const widest = Math.max( ...lines.map( measure ) );
 
-					if ( d < 1.2 * fontSize || w < measure( line ) + 2 * pad ) continue;
+					if ( w < widest + 2 * pad || h < pad + lines.length * LINE * fontSize ) continue;
 
-					const proxy = { data: { name: line }, leaf };
+					const proxy = { data: { name: lines.join( '\n' ) }, leaf };
 					const anchor = toWorld( leaf.x0, leaf.y0 );
 					anchor.x += pad;
-					anchor.z += pad + 0.5 * fontSize; // the line's middle, one half em below the far edge
-					anchor.y = face.get( leaf ) + LIFT;
+					anchor.z += pad;
+					anchor.y = THICK + LIFT;
 
 					labelled.push( proxy );
 					labelIds.set( proxy, ids.get( leaf ) );
@@ -286,17 +258,27 @@
 					camera,
 					billboard: false
 				} );
-				labels.expected = labelled.length;
+
+				// block anchored at its top-left, the notebook's line pitch
+				for ( const l of labels.labels ) {
+
+					l.object.anchorY = 'top';
+					l.object.lineHeight = LINE;
+
+				}
+
+				labels.group.updateMatrixWorld( true );
+				labels.batched.sync();
 				scene.add( labels.group );
 
 				// for the worker's verification script: the notebook rects and the
 				// world-space footprint of every leaf's mesh, read off its matrix
 				scene.updateMatrixWorld( true );
 				window.__treemap = {
-					S, SIDE, STEP, PLINTH, H,
-					leaves: root.leaves().map( leaf => {
+					S, SIDE, THICK,
+					leaves: leaves.map( ( leaf, i ) => {
 
-						const b = new THREE.Box3().setFromObject( marks[ root.descendants().indexOf( leaf ) ].object );
+						const b = new THREE.Box3().setFromObject( marks[ i ].object );
 						return {
 							name: leaf.data.name, depth: leaf.depth,
 							x0: leaf.x0, y0: leaf.y0, x1: leaf.x1, y1: leaf.y1,
@@ -317,17 +299,18 @@
 				await renderer.init();
 
 				console.log( 'd33 backend:', renderer.backend.constructor.name,
-					'stack:', TOP.toFixed( 3 ), 'fontSize:', fontSize.toFixed( 3 ), 'px/unit:', pxPerUnit.toFixed( 2 ),
-					'cells:', marks.length, 'leaves:', root.leaves().length,
+					'fontSize:', fontSize.toFixed( 3 ), 'px/unit:', pxPerUnit.toFixed( 2 ),
+					'cells:', marks.length, 'leaves:', leaves.length,
 					'labels:', labels.count, 'flipped:', labels.flipped );
 
 				attachOrbit( camera, renderer.domElement, target );
 
 				register( {
 					renderer, scene, camera, marks, target,
-					expected: { nodes: 0, links: 0, cells: root.descendants().length },
+					expected: { nodes: 0, links: 0, cells: leaves.length, labels: labelled.length },
 					pickables: cells.children,
-					labels
+					labels,
+					planar: true
 				} );
 
 			}

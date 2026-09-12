@@ -7,21 +7,24 @@
 //   marks:    one entry per datum (HANDOFF §C.11)
 //             { id, kind: 'node' | 'link' | 'cell', object, a?, b? }
 //             `a`/`b` are the ids of the two endpoint marks of a link.
-//   expected: { nodes, links, cells } straight off the d3 hierarchy
+//   expected: { nodes, links, cells, labels? } straight off the d3 hierarchy
 //             ( root.descendants().length, root.links().length ) (§C.12);
-//             `cells` defaults to 0.
+//             `cells` defaults to 0; `labels` is optional (see below).
 //   target:   optional orbit target; defaults to the centroid of node/cell marks.
 //   normal:   optional on a mark (unit Vector3 or [x,y,z]); the picking gate
 //             samples a mark from a camera only if it faces it
 //             (dot(normal, camera − mark) > 0). Absent = always eligible.
+//   planar:   optional `true` for a chart rendered flat inside the 3D world
+//             (director ruling, handoff/rung0/LOG.md): the depth gate still
+//             reports the ratio but passes with note 'planar by ruling'.
 //   pickables: optional array of Object3D the picking gate is allowed to hit.
 //             Defaults to the node/cell mark objects, so grids, helpers and
 //             link geometry can never occlude a node (rung 0 director ruling).
-//   labels:   optional `{ count, expected?, dump? }` (the object
-//             `hierarchyLabels()` in src/labels.js returns). Labels are not
-//             marks; the labels gate checks `count === expected` when the page
-//             supplies `expected` (a treemap labels leaves only), otherwise
-//             `count === nodes`, and `dump()` — one entry per label,
+//   labels:   optional `{ count, dump? }` (the object `hierarchyLabels()`
+//             in src/labels.js returns). Labels are not marks; the labels
+//             gate checks `count === expected.labels` when the page supplies
+//             it (a treemap labels leaves only), otherwise `count === nodes`,
+//             and `dump()` — one entry per label,
 //             `{ id, text, x, y, z, q: [x,y,z,w], anchorX }` — is written to
 //             the marks JSON as a separate `labels` array (rung 3).
 //
@@ -39,7 +42,8 @@ const state = {
 	expected: { nodes: 0, links: 0, cells: 0 },
 	target: null,
 	pickables: null,
-	labels: null
+	labels: null,
+	planar: false
 };
 
 // gate thresholds
@@ -57,6 +61,7 @@ export function register( options ) {
 	state.target = options.target || null;
 	state.pickables = options.pickables || null;
 	state.labels = options.labels || null;
+	state.planar = options.planar === true;
 
 	window.d33 = api;
 
@@ -209,6 +214,8 @@ function depthGate( positions ) {
 	const max = Math.max( ...extents );
 	const ratio = max > 0 ? Math.min( ...extents ) / max : 0;
 
+	if ( state.planar ) return { extents, ratio, pass: true, note: 'planar by ruling' };
+
 	return { extents, ratio, pass: ratio >= DEPTH_RATIO };
 
 }
@@ -231,15 +238,15 @@ function countsGate( marks ) {
 
 // Every node carries a label (rung 3). Labels are not marks, so this is a
 // separate count: the number of `Text` members registered vs the node marks —
-// or vs the page's own `labels.expected` when it labels a subset (a treemap
+// or vs the page's own `expected.labels` when it labels a subset (a treemap
 // labels leaves only, and only those wide enough). `expectedNodes` keeps its
 // name because the harness prints it.
 function labelsGate( marks ) {
 
 	const nodes = marks.filter( m => m.kind === 'node' ).length;
 	const count = state.labels ? state.labels.count | 0 : 0;
-	const fromPage = state.labels && state.labels.expected !== undefined;
-	const expected = fromPage ? state.labels.expected | 0 : nodes;
+	const fromPage = state.expected.labels !== undefined;
+	const expected = fromPage ? state.expected.labels | 0 : nodes;
 
 	const out = { count, expectedNodes: expected, source: fromPage ? 'page' : 'nodes', pass: count === expected };
 	if ( ! state.labels ) out.note = 'no labels registered';
@@ -427,7 +434,9 @@ const api = {
 
 			} ),
 			labels: state.labels && typeof state.labels.dump === 'function' ? state.labels.dump() : [],
-			expected: { nodes: state.expected.nodes | 0, links: state.expected.links | 0, cells: state.expected.cells | 0 },
+			expected: { nodes: state.expected.nodes | 0, links: state.expected.links | 0, cells: state.expected.cells | 0,
+				...( state.expected.labels !== undefined ? { labels: state.expected.labels | 0 } : {} ) },
+			planar: state.planar,
 			target: { x: target.x, y: target.y, z: target.z },
 			gates,
 			env: environment()

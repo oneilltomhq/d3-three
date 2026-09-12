@@ -144,10 +144,11 @@ export async function hierarchyLabels( root, ids, positions, {
 	const nodes = root.descendants();
 
 	// Size the batch to exactly this hierarchy: one member per node, one glyph
-	// quad per character (lib3 counts spaces as blank glyphs too).
+	// quad per character (lib3 counts spaces as blank glyphs too, but a
+	// newline — a multi-line label — is a line break, not a glyph).
 	const strings = nodes.map( n => String( n.data[ textKey ] ) );
-	const glyphTotal = strings.reduce( ( s, t ) => s + t.length, 0 );
-	const uniqueChars = new Set( strings.join( '' ).replace( / /g, '' ) );
+	const glyphTotal = strings.reduce( ( s, t ) => s + t.replace( /\n/g, '' ).length, 0 );
+	const uniqueChars = new Set( strings.join( '' ).replace( /[ \n]/g, '' ) );
 
 	const batched = new LabelBatch( nodes.length, glyphTotal, {
 		font, outlineWidth, outlineColor
