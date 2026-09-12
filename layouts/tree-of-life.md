@@ -73,23 +73,29 @@ ring the notebook has, at height `H`.
   (on the rim, inside the node box — the depth gate counts every non-link
   mark). `expected.extensions = 191`; the counts gate in `src/d33.js` learned
   this one kind.
-- labels: **every node (381), not leaves only** as first drafted — the rung 3
-  labels gate is `count === nodes` and `hierarchyLabels` labels every node
-  (the bundling precedent). Text `name.replace(/_/g, " ")`; the three unnamed
-  nodes in the file (the root, its unnamed child, one clade at depth 12) get an
-  empty string. Leaves are anchored at the top of their extension (rim, height
-  `H`), pushed outward by 0.4, lying in the *radial vertical* plane like the
-  notebook's radial text: local +x = the leaf's radial unit vector (outward),
-  +y = the axis (`basisQuaternion(radial, UP)`), anchor start — so from above
-  it reads exactly like the 2D chart. Internal nodes sit at their own point,
-  anchored end, offset −0.27 (0.12 + 0.15) inward along their own radius;
-  the root reads along +x. Font em = `min(8 px at target distance, leaf pitch)`
-  with leaf pitch `2πR / 191 = 0.329` (the notebook's own rule, 10 px text at
-  a 10 px pitch): **0.329 world units = 3.13 px** at 400×250 (12.5 px at
-  1600×1000); the 8 px cap would be 0.84. `hierarchyLabels`'s mirror check
-  from camera A flips **192 of 381**; the per-frame 180° flip
-  (`labels.update(camera)`) is the director's on merge, not implemented here.
-  Roboto Regular, fill `#333`, halo 0.25, as the other examples.
+- labels: **leaves only (191), as the notebook** (the labels gate now takes a
+  page-supplied `expected.labels`, so internal nodes are not labelled). Text
+  `name.replace(/_/g, " ")`. Each label lies **flat in the horizontal plane at
+  height `H`** — the plane of the clean top-rim ring — anchored at the top of
+  the leaf's extension pushed outward by 0.4, baseline along the leaf's
+  radius, facing +y: the notebook's layout seen from above, lifted to the top
+  of the cylinder, so no label is edge-on from any elevation. The notebook's
+  flip rule: `x < 180` → local +x = radial outward, anchor start;
+  `x ≥ 180` (96 leaves) → its `rotate(180)`: local +x = radial inward, anchor
+  end, so the text still sits outward of the rim. Local up is the horizontal
+  tangent `(out.z, 0, −out.x)` so `basisQuaternion(out, up)` faces +y.
+  Implemented on the unchanged `hierarchyLabels` by handing it the leaves as
+  shims `{ data, x, children: x < 180 ? undefined : [] }` — a "node with
+  children" is exactly anchor end, offset −internalOffset along +x, with
+  `internalOffset = leafOffset = 0.4` (the force page's shim trick). Font em =
+  `min(8 px at target distance, leaf pitch)` with leaf pitch `2πR / 191 =
+  0.329`: **0.329 world units = 3.13 px** at 400×250 (12.5 px at 1600×1000);
+  at the label radius 10.4 the pitch is 0.342, so neighbours do not overlap.
+  `hierarchyLabels`'s static mirror check from camera A flips **26 of 191**
+  (about the label's own up axis, so those face −y); the per-frame 180° flip
+  (`labels.update(camera)`) that fixes the halves seen from behind is the
+  director's on merge, not implemented here. Roboto Regular, fill `#333`,
+  halo 0.25, as the other examples. `expected.labels = 191`.
 
 Colour legend (three swatches) is a 2D affordance; dropped, the three domain
 colours are visible in the links.
@@ -109,7 +115,7 @@ attached without damping; one frame.
 
 depth 0.400 (`19.999 × 8.000 × 19.999`) · counts 381/381 nodes, 380/380 links,
 191/191 extensions · angle 0.2606 / 0.2522 · picking 20/20 from both cameras
-(sampled 20) · labels 381/381. No `normal` filter needed: the sphere-on-a-rim
+(sampled 20) · labels 191/191. No `normal` filter needed: the sphere-on-a-rim
 geometry hides nothing by construction. `e2e:twice` 0 px.
 
 ## Primitives for `src/`
@@ -117,7 +123,8 @@ geometry hides nothing by construction. `e2e:twice` 0 px.
 `src/step.js` (new, add-only): `cylinderPoint(θ, r, h)` and
 `stepCurve(θ0, r0, h0, θ1, r1, h1, arcStep)` → Vector3[]. `src/d33.js`: the
 counts gate accepts mark kind `extension` against `expected.extensions`
-(defaults to 0, so every other page is unchanged). `link.js`, `labels.js`,
+(defaults to 0), and the labels gate accepts a page-supplied `expected.labels`
+(defaults to the node count) — every other page is unchanged. `link.js`, `labels.js`,
 `frame.js`, `orbit.js` untouched.
 
 ## Reference
@@ -133,12 +140,9 @@ no size, which the tool's presets did not cover).
 
 ## Gaps
 
-- Leaf labels in the radial vertical plane are edge-on from any side view at
-  the near and far sides of the rim (the radial direction points at the
-  camera there), so at 35° elevation the labels at the top and bottom of the
-  frame are unreadable; the left and right quadrants read. From above they
-  all read, as the notebook's do. A plane that leans toward the camera would
-  fix it but is not this note's design.
+- Labels on the half of the rim facing away from the camera are seen from
+  behind (mirrored / upside down in the flat plane) until the director's
+  per-frame flip lands; the static mirror check only corrects left-right.
 - The notebook's hover (`link--active` up the ancestry) is not lifted.
 - `marks/d3_tree-of-life.json` `expected` carries only `nodes`/`links` (the
   harness writes `report.expected` as is); `extensions` is in
@@ -150,5 +154,5 @@ d3 modules: d3-hierarchy (hierarchy, cluster), d3-array (ascending, max),
 d3-scale (scaleOrdinal), d3-scale-chromatic (schemeCategory10). Layout: the
 notebook's own cells plus the cylinder mapping above (`cylinderPoint`, ~5 lines)
 and `stepCurve` (~20 lines). Every node position, link endpoint pair, extension
-midpoint and label (position, quaternion, anchor, string) is in
+midpoint and leaf label (position, quaternion, anchor, string) is in
 `marks/d3_tree-of-life.json`.

@@ -122,9 +122,8 @@
 				const ids = new Map();
 				root.each( ( node, i ) => ids.set( node, 'n' + i ) );
 
-				// label text: the notebook's `name.replace(/_/g, " ")`; three nodes (the
-				// root among them) have no name in the file and get an empty label
-				root.each( node => node.data.label = ( node.data.name || '' ).replace( /_/g, ' ' ) );
+				// label text: the notebook's `name.replace(/_/g, " ")` (leaves only, as the notebook)
+				for ( const leaf of root.leaves() ) leaf.data.label = leaf.data.name.replace( /_/g, ' ' );
 
 				/* ---------------- scene ---------------- */
 
@@ -257,17 +256,21 @@
 				const view = { elevation: 35, azimuth: 25, fill: 0.85 };
 				let target = frameCamera( camera, box, { ...view, points: nodePoints } );
 
-				/* ---------------- labels: one Text per node (src/labels.js) ----------------
-				   Leaves are labelled at the top of their extension (the rim at
-				   height H), in the radial vertical plane: baseline +x = the leaf's
-				   radial direction (outward), +y = the axis, so from above they read
-				   exactly like the notebook's rotated text. Internal nodes (the
-				   labels gate counts every node) sit at their own point, anchored
-				   end, reading inward along their radius. Em size: 8 px at the
-				   target distance, capped at the leaf pitch on the rim
-				   (2πR / 191 = 0.329) — the notebook's own rule, 10 px text at a
-				   10 px pitch. The camera is then refitted to the leaf labels' far
-				   ends, the notebook's 170 px label margin. */
+				/* ---------------- labels: one Text per leaf (src/labels.js) ----------------
+				   The notebook's: leaves only (191), `name.replace(/_/g, " ")`, at
+				   the rim + 4 rotated to the leaf's angle, flipped for x >= 180 so
+				   every label reads left-to-right with its text outward of the
+				   rim. Lifted to the top of the cylinder: each label lies FLAT in
+				   the horizontal plane at height H (the plane of the clean rim
+				   ring), anchored at the top of its extension pushed outward by
+				   0.4, baseline along the leaf's radius, facing +y. x < 180:
+				   +x = radial outward, anchor start; x >= 180: the notebook's
+				   rotate(180) — +x = radial inward, anchor end — so the text still
+				   sits outward of the rim. Em size: 8 px at the target distance,
+				   capped at the leaf pitch on the rim (2πR / 191 = 0.329), the
+				   notebook's own rule (10 px text at a 10 px pitch). The camera
+				   is then refitted to the labels' far ends, the notebook's 170 px
+				   label margin. */
 
 				const LABEL_PX = 8;
 				const leafPitch = 2 * Math.PI * R / leaves.length;
@@ -295,18 +298,36 @@
 
 				}
 
-				// anchor points: leaves at the top of their extension, internal nodes at themselves
-				const labelPositions = new Map();
-				root.each( node => labelPositions.set( node, node.children ? position.get( node ) : rimTop.get( node ) ) );
+				// hierarchyLabels anchors a childless node `start` and offsets it
+				// +leafOffset along its +x, a node with children `end` and
+				// −internalOffset along +x. The notebook's flip for x >= 180 is
+				// exactly the second case with +x = radial inward: anchor end,
+				// pushed outward by internalOffset = leafOffset. So the leaves are
+				// handed over as shims — { data, x } plus an empty `children` for
+				// the flipped half — with their own ids and rim-top positions;
+				// no primitive changed (the force page did the same).
+				const shims = leaves.map( leaf => ( { data: leaf.data, x: leaf.x, children: leaf.x < 180 ? undefined : [] } ) );
+				const shimIds = new Map( shims.map( ( s, i ) => [ s, ids.get( leaves[ i ] ) ] ) );
+				const shimPositions = new Map( shims.map( ( s, i ) => [ s, rimTop.get( leaves[ i ] ) ] ) );
 
-				labels = await hierarchyLabels( root, ids, labelPositions, {
+				labels = await hierarchyLabels( { descendants: () => shims }, shimIds, shimPositions, {
 					font: '/examples/fonts/Roboto-Regular.ttf',
 					fontSize,
 					text: 'label',
 					color: 0x333333,
 					outlineWidth: 0.25, outlineColor: 0xffffff,
-					leafOffset, internalOffset: NODE_R + 0.15,
-					orient: node => basisQuaternion( node.depth === 0 ? new THREE.Vector3( 1, 0, 0 ) : radial( node ), UP ),
+					leafOffset, internalOffset: leafOffset,
+					orient: shim => {
+
+						// flat: +x along the radius (outward, or inward for the
+						// flipped half), local up = the horizontal tangent chosen
+						// so the label faces +y (basisQuaternion: +z = +x × up)
+						const out = radial( shim );
+						if ( shim.x >= 180 ) out.negate();
+						const up = new THREE.Vector3( out.z, 0, - out.x );
+						return basisQuaternion( out, up );
+
+					},
 					camera,
 					billboard: false
 				} );
@@ -325,14 +346,14 @@
 				console.log( 'd33 backend:', renderer.backend.constructor.name,
 					'R:', R, 'H:', H, 'maxLength:', maxLength( root ).toFixed( 5 ), 'leafPitch:', leafPitch.toFixed( 3 ),
 					'fontSize:', fontSize.toFixed( 3 ), 'px:', ( fontSize * pxPerUnit ).toFixed( 2 ),
-					'labels:', labels.count, 'flipped:', labels.flipped,
+					'labels:', labels.count, 'flipped:', labels.flipped, 'x>=180:', leaves.filter( l => l.x >= 180 ).length,
 					'nodes:', root.descendants().length, 'links:', root.links().length, 'extensions:', leaves.length );
 
 				attachOrbit( camera, renderer.domElement, target );
 
 				register( {
 					renderer, scene, camera, marks, target,
-					expected: { nodes: root.descendants().length, links: root.links().length, extensions: leaves.length },
+					expected: { nodes: root.descendants().length, links: root.links().length, extensions: leaves.length, labels: leaves.length },
 					pickables: nodes.children,
 					labels
 				} );

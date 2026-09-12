@@ -44,8 +44,8 @@
 			"pass": true
 		},
 		"labels": {
-			"count": 381,
-			"expectedNodes": 381,
+			"count": 191,
+			"expectedNodes": 191,
 			"pass": true
 		},
 		"pass": true

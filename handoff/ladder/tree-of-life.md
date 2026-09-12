@@ -4,7 +4,7 @@
 | --- | --- |
 | page | `examples/d3_tree-of-life.html` |
 | screenshot | `examples/screenshots/d3_tree-of-life.jpg` (400×250) |
-| marks | `marks/d3_tree-of-life.json` (381 nodes, 380 links, 191 extensions, 381 labels) |
+| marks | `marks/d3_tree-of-life.json` (381 nodes, 380 links, 191 extensions, 191 labels) |
 | layout note | `layouts/tree-of-life.md` |
 | reference render of the original notebook | `ref/tree-of-life.png` (954×954, constant radius); `ref/tree-of-life-length.png` (branch length) |
 | eyeball render | `handoff/ladder/tree-of-life-1600x1000.png` |
@@ -46,19 +46,24 @@ position is the extension's midpoint. `expected = { nodes: 381, links: 380,
 extensions: 191 }`; `src/d33.js`'s counts gate learned `extension` /
 `expected.extensions` (defaults to 0, other pages unchanged).
 
-**Labels:** every node (381; the labels gate is `count === nodes`), same
-primitive and dependency as the earlier entries (lib3 `sdf-text`,
-`src/labels.js`, Roboto Regular, `#333` on a white halo 0.25), text
-`name.replace(/_/g, " ")`, empty for the three unnamed nodes. Leaves are anchored
-at the top of their extension (rim, height `H`) and lie in the radial vertical
-plane — local +x = the leaf's radial direction outward, +y = the axis — pushed
-outward by 0.4, anchor start, so from above they read exactly like the
-notebook's rotated text; internal nodes sit at their own point, anchor end,
-0.27 inward along their radius. `fontSize = min(8 px at target distance, leaf
-pitch 2πR/191 = 0.329) = 0.329` world units (3.13 px at 400×250, 12.5 px at
-1600×1000). Mirror check from camera A flips 192 of 381. Every label's anchor
-position, quaternion, anchor and string is in `marks/d3_tree-of-life.json`
-`labels[]`.
+**Labels:** leaves only (191), as the notebook; same primitive and dependency as
+the earlier entries (lib3 `sdf-text`, `src/labels.js`, Roboto Regular, `#333` on
+a white halo 0.25), text `name.replace(/_/g, " ")`. Each label lies flat in the
+horizontal plane at height `H` (the plane of the top rim ring), anchored at the
+top of the leaf's extension pushed outward by 0.4, baseline along the leaf's
+radius, facing +y — the notebook's layout seen from above, lifted to the top of
+the cylinder, so nothing is edge-on from any elevation. The notebook's flip rule
+is kept: `x < 180` reads outward (anchor start), `x ≥ 180` (96 leaves) is
+rotated 180° in the plane (anchor end), text outward of the rim either way.
+`fontSize = min(8 px at target distance, leaf pitch 2πR/191 = 0.329) = 0.329`
+world units (3.13 px at 400×250, 12.5 px at 1600×1000). `hierarchyLabels` is
+unchanged: the leaves are passed as `{ data, x, children }` shims (empty
+`children` for the flipped half, which is the primitive's anchor-end case).
+Static mirror check from camera A flips 26 of 191; the labels seen from behind
+are the director's per-frame flip. Every label's anchor position, quaternion,
+anchor and string is in `marks/d3_tree-of-life.json` `labels[]`.
+`expected.labels = 191`; the labels gate in `src/d33.js` now takes a
+page-supplied `expected.labels` (defaults to the node count).
 
 **Camera:** PerspectiveCamera fov 40, elevation 35°, azimuth 25°, fitted at 0.85
 fill to the projected nodes plus the far ends of the leaf labels (three refit
@@ -67,10 +72,11 @@ its 0.36-away neighbour from camera A; 20–28° is a clean 20/20 run.)
 
 **Gates:** depth 0.400 · counts 381/381, 380/380, extensions 191/191 · angle
 0.2606 / 0.2522 · picking 20/20 from both cameras (sampledA 20, sampledB 20) ·
-labels 381/381. `e2e:twice` 0 px (both raw PNGs sha256 `281f3f2d…9a4f3`).
+labels 191/191. `e2e:twice` 0 px (both raw PNGs sha256 `b607532b…e99db`).
 
 **Shared-file changes on this branch:** `src/d33.js` counts gate, +3 lines and
-two doc lines (mark kind `extension`, `expected.extensions`). `tools/ref.js`
+two doc lines (mark kind `extension`, `expected.extensions`); labels gate, +2
+lines (`expected.labels`, defaulting to the node count). `tools/ref.js`
 gained three additive env knobs — `REF_VALUES` (JSON merged over the presets:
 this notebook's `width` cell is 954, and presets shadow cells), `REF_SVG_SIZE`
 (size given to a returned SVG that has only a viewBox), `REF_THEN` (cells to
@@ -78,8 +84,7 @@ evaluate after `chart`: `update` with `showLength: true` for the branch-length
 reference). Existing references render byte-identically without them
 (`ref/cluster.png` checked). `src/step.js` added.
 
-**Gap:** leaf labels in the radial vertical plane are edge-on at the near and far
-sides of the rim from any side view, so at 35° elevation the labels at the top
-and bottom of the frame do not read; the left and right quadrants do, and all of
-them read from above. The notebook's hover (highlight the ancestry) is not
-lifted. The per-frame 180° label flip is the director's on merge.
+**Gap:** labels on the half of the rim facing away from the camera are seen from
+behind (mirrored in the flat plane) until the director's per-frame flip lands;
+the static mirror check only corrects left-right. The notebook's hover
+(highlight the ancestry) is not lifted.

@@ -234,8 +234,10 @@ function labelsGate( marks ) {
 
 	const nodes = marks.filter( m => m.kind === 'node' ).length;
 	const count = state.labels ? state.labels.count | 0 : 0;
+	// a page may label a subset (tree-of-life: leaves only) via `expected.labels`
+	const expected = state.expected.labels !== undefined ? state.expected.labels | 0 : nodes;
 
-	const out = { count, expectedNodes: nodes, pass: count === nodes };
+	const out = { count, expectedNodes: expected, pass: count === expected };
 	if ( ! state.labels ) out.note = 'no labels registered';
 	return out;
 
