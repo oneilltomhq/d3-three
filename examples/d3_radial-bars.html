@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - radial stacked bar chart</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 radial stacked bar chart (data-2.csv): the notebook's stacks lifted upward, one prism per state x age group</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import { register } from 'd33';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
+			import { sectorPrism, sectorTopCentre, polar } from '/src/sector.js';
+
+			let renderer, scene, camera, labels;
+
+			/* ---------------- the notebook's numbers ----------------
+			   width = height = 928, innerRadius 180, outerRadius 0.67 * 928 =
+			   621.76. The chart's outer circle becomes a 20-unit diameter, so one
+			   notebook px is S world units radially; the radial scale y (px from
+			   the centre) is reinterpreted as height above the ground:
+			   h(v) = (y(v) - innerRadius) * S, max 441.76 * S = 7.1 units. */
+			const WIDTH = 928;
+			const INNER_PX = 180;
+			const OUTER_PX = WIDTH * 0.67;
+			const S = 10 / OUTER_PX;                 // world units per notebook px (radial)
+			const R_IN = INNER_PX * S;               // 2.895
+			const R_OUT = OUTER_PX * S;              // 10
+			const FONT_S = 20 / WIDTH;               // text: the notebook's 928-px frame as 20 units
+			const LABEL_PX = 12;                     // the notebook's 10 px, +20 % for the far side's foreshortening
+			const LABEL_GAP = 0.25;                  // rim to text anchor
+			const RING_GAP = 0.15;                   // rings sit just outside the outer wall
+			const VIEW = { elevation: 35, azimuth: 25, fill: 0.85 };
+			const AXIS_OFFSET = 35;                  // the tick column: this many degrees left of camera A's front point
+			const LEGEND_Z = - 1.0;                  // legend shifted toward the far inner wall (the near wall hides the hole's near half)
+			const UP = new THREE.Vector3( 0, 1, 0 );
+			const DEG = Math.PI / 180;
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data + d3 layout (verbatim from the notebook) ---------------- */
+
+				const csv = d3.csvParse( await fetch( '/gallery/radial/radial-stacked-bar-chart.v3/files/data-2.csv' ).then( r => r.text() ), d3.autoType );
+				const data = csv.columns.slice( 1 ).flatMap( age => csv.map( d => ( { state: d.State, age, population: d[ age ] } ) ) );
+
+				// Stack the data into series by age
+				const series = d3.stack()
+					.keys( d3.union( data.map( d => d.age ) ) )
+					.value( ( [ , D ], key ) => D.get( key ).population )
+					( d3.index( data, d => d.state, d => d.age ) );
+
+				// An angular x-scale
+				const x = d3.scaleBand()
+					.domain( d3.groupSort( data, D => - d3.sum( D, d => d.population ), d => d.state ) )
+					.range( [ 0, 2 * Math.PI ] )
+					.align( 0 );
+
+				// A radial y-scale maintains area proportionality of radial bars
+				const y = d3.scaleRadial()
+					.domain( [ 0, d3.max( series, d => d3.max( d, d => d[ 1 ] ) ) ] )
+					.range( [ INNER_PX, OUTER_PX ] );
+
+				const color = d3.scaleOrdinal()
+					.domain( series.map( d => d.key ) )
+					.range( d3.schemeSpectral[ series.length ] )
+					.unknown( '#ccc' );
+
+				const padAngle = 1.5 / INNER_PX;
+				const padRadius = INNER_PX;
+
+				// the lift: the radial scale as height
+				const h = v => ( y( v ) - INNER_PX ) * S;
+
+				const ticks = y.ticks( 10 ).slice( 1 );
+				const tickFormat = y.tickFormat( 5, 's' );
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.2 ) );
+
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.6 );
+				sun.position.set( 1, 2, 1.5 ).normalize();
+				scene.add( sun );
+
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				/* ---------------- marks: one prism per (state, age group) ----------------
+				   The notebook's arc has innerRadius y(d[0]) and outerRadius y(d[1]);
+				   here every prism is the same annular sector (R_IN .. R_OUT, the
+				   state's band, the notebook's pad at padRadius innerRadius) and
+				   the stack runs UP: from h(d[0]) to h(d[1]). Order: series (age
+				   group) outer, state inner, as the notebook's join order. */
+
+				const group = new THREE.Group();
+				group.name = 'cells';
+				scene.add( group );
+
+				const materials = new Map();
+				const marks = [];
+
+				for ( const D of series ) {
+
+					materials.set( D.key, new THREE.MeshStandardNodeMaterial( {
+						color: new THREE.Color( color( D.key ) ), roughness: 0.7, metalness: 0.0
+					} ) );
+
+					for ( const d of D ) {
+
+						const state = d.data[ 0 ];
+						const arc = {
+							innerRadius: R_IN, outerRadius: R_OUT,
+							startAngle: x( state ), endAngle: x( state ) + x.bandwidth(),
+							padAngle, padRadius: padRadius * S
+						};
+
+						const y0 = h( d[ 0 ] ), y1 = h( d[ 1 ] );
+						const centre = sectorTopCentre( arc, y1 );       // top-face centre at height y1
+						const local = centre.clone().setY( y1 - y0 );     // in the prism's own frame (base at 0)
+
+						const mesh = new THREE.Mesh( sectorPrism( arc, y1 - y0, local ), materials.get( D.key ) );
+						mesh.position.copy( centre );
+						mesh.name = `${ state } ${ D.key }`;
+						group.add( mesh );
+
+						marks.push( { id: 'c' + marks.length, kind: 'cell', object: mesh, normal: [ 0, 1, 0 ] } );
+
+					}
+
+				}
+
+				/* ---------------- the y grid: rings at each tick height ----------------
+				   The notebook's circles r = y(tick) become thin rings around the
+				   outer wall at height h(tick); not marks. */
+
+				const rings = new THREE.Group();
+				rings.name = 'rings';
+				scene.add( rings );
+
+				const ringMaterial = new THREE.LineBasicNodeMaterial( { color: 0x000000, opacity: 0.5, transparent: true } );
+				const RING_SEGMENTS = 180;
+
+				for ( const t of ticks ) {
+
+					const pts = [];
+					for ( let i = 0; i <= RING_SEGMENTS; i ++ ) pts.push( polar( 2 * Math.PI * i / RING_SEGMENTS, R_OUT + RING_GAP, h( t ) ) );
+					const ring = new THREE.Line( new THREE.BufferGeometry().setFromPoints( pts ), ringMaterial );
+					ring.name = 'ring ' + tickFormat( t );
+					rings.add( ring );
+
+				}
+
+				/* ---------------- colour legend, flat in the centre hole ----------------
+				   The notebook's: rect 18 x 18 at translate(-40, (n/2 - i - 1) * 20),
+				   text at x 24, y 9; the block shifted LEGEND_Z toward the far wall,
+				   since from 35 degrees the near wall hides the hole's near half. Not marks. */
+
+				const legend = new THREE.Group();
+				legend.name = 'legend';
+				scene.add( legend );
+
+				const LEGEND_SQ = 18 * FONT_S, LEGEND_ROW = 20 * FONT_S, LEGEND_X = - 40 * FONT_S, LEGEND_TEXT = 24 * FONT_S;
+				const LEGEND_THICK = 0.02;
+				const keys = color.domain();
+
+				for ( let i = 0; i < keys.length; i ++ ) {
+
+					const z0 = LEGEND_Z + ( keys.length / 2 - i - 1 ) * LEGEND_ROW;
+					const sq = new THREE.Mesh( new THREE.BoxGeometry( LEGEND_SQ, LEGEND_THICK, LEGEND_SQ ), materials.get( keys[ i ] ) );
+					sq.position.set( LEGEND_X + LEGEND_SQ / 2, LEGEND_THICK / 2, z0 + LEGEND_SQ / 2 );
+					sq.name = 'legend ' + keys[ i ];
+					legend.add( sq );
+
+				}
+
+				/* ---------------- camera (first fit: cells and rings) ---------------- */
+
+				const cellPoints = [];
+				const _c = new THREE.Vector3();
+
+				for ( const mesh of group.children ) {
+
+					mesh.geometry.computeBoundingBox();
+					const bb = mesh.geometry.boundingBox;
+
+					for ( let k = 0; k < 8; k ++ ) {
+
+						_c.set( k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z );
+						cellPoints.push( _c.clone().add( mesh.position ) );
+
+					}
+
+				}
+
+				for ( const ring of rings.children ) {
+
+					const pos = ring.geometry.attributes.position;
+					for ( let i = 0; i < pos.count; i += 15 ) cellPoints.push( new THREE.Vector3().fromBufferAttribute( pos, i ) );
+
+				}
+
+				const box = new THREE.Box3();
+				for ( const p of cellPoints ) box.expandByPoint( p );
+
+				// Azimuth 25 puts camera A on the +z side: the notebook's 12 o'clock
+				// (angle 0, world -z) is the far side, 3 o'clock is screen right.
+				const frame = points => frameCamera( camera, box, { ...VIEW, points } );
+
+				let target = frame( cellPoints );
+
+				/* ---------------- labels (src/labels.js) ----------------
+				   One batch, three kinds of label, LABEL_PX * FONT_S units (the
+				   notebook's 10 px scaled to the 20-unit frame is 0.216: legible
+				   near the camera, 4 px on the far side from 35 degrees, so 12 px):
+				   - states: outside the outer rim at the band's mid-angle, at the
+				     height of that state's stack top, baseline radial, reading
+				     outward on the right half and inward on the left half (the
+				     notebook's flip: text stays upright), anchored at the rim end;
+				   - y ticks: the tick value at each ring's front edge, upright,
+				     facing camera A, centred; the "Population" title 1 em above
+				     the top ring;
+				   - legend: the age-group name beside its square, baseline +x. */
+
+				const fontSize = LABEL_PX * FONT_S;
+				const camRight = new THREE.Vector3( Math.cos( VIEW.azimuth * DEG ), 0, - Math.sin( VIEW.azimuth * DEG ) );
+
+				const wrappers = [];
+				const labelIds = new Map();
+				const labelPositions = new Map();
+				let turned = 0;
+
+				const add = ( name, id, position, along, anchorX, up = UP.clone().cross( along ) ) => {
+
+					const w = { data: { name }, along, up, anchorX }; // face = along x up: world up for the flat ones
+					wrappers.push( w );
+					labelIds.set( w, id );
+					labelPositions.set( w, position );
+					return w;
+
+				};
+
+				// states: at the rim, lifted to the state's own stack top (a label on
+				// the ground would be behind the wall of every stack between it and
+				// the camera — the far side's 7-unit stacks hid CA, TX, NY outright)
+				const stackTop = new Map( series[ series.length - 1 ].map( d => [ d.data[ 0 ], h( d[ 1 ] ) ] ) );
+
+				for ( const state of x.domain() ) {
+
+					const am = x( state ) + x.bandwidth() / 2;
+					const radial = polar( am, 1 ).setY( 0 );           // outward unit vector
+					const p = polar( am, R_OUT + LABEL_GAP, stackTop.get( state ) );
+					if ( am >= Math.PI ) radial.negate();              // left half reads inward (upright in the notebook's sense)
+
+					// from an oblique camera "reads left-to-right" is "the baseline
+					// projects rightward"; where the notebook's rule disagrees the
+					// baseline is turned in the plane, so labels.js's mirror check
+					// (a turn about the up axis) finds nothing to flip
+					const r = p.clone().add( radial ).project( camera ).x;
+					const l = p.clone().sub( radial ).project( camera ).x;
+					if ( r < l ) { radial.negate(); turned ++; }
+
+					const outward = radial.dot( polar( am, 1 ) ) > 0;
+					add( state, 'state ' + state, p, radial, outward ? 'left' : 'right' );
+
+				}
+
+				// y ticks + title: a column at the rings' front edge, AXIS_OFFSET
+				// degrees to the left of the point nearest camera A (dead ahead it
+				// rose straight over the legend), upright in the vertical plane
+				// facing camera A (fixed at layout time, not a billboard), centred;
+				// the "Population" title 1 em above the top ring. Tried first flat at
+				// the front edge (read as painted on the disc top behind them) and
+				// flat at the notebook's 12 o'clock beside the tallest bar (4 px at
+				// the far side from 35 degrees): upright at the front they read as an axis.
+				const top = ticks[ ticks.length - 1 ];
+				const axisDir = new THREE.Vector3( Math.sin( ( VIEW.azimuth - AXIS_OFFSET ) * DEG ), 0, Math.cos( ( VIEW.azimuth - AXIS_OFFSET ) * DEG ) );
+				const axis = t => axisDir.clone().multiplyScalar( R_OUT + RING_GAP + LABEL_GAP ).setY( t );
+
+				// a thin axis line through the ring stack under the labels, ground to the top ring
+				const axisLine = new THREE.Line( new THREE.BufferGeometry().setFromPoints( [ axis( 0 ), axis( h( top ) ) ] ), ringMaterial );
+				axisLine.name = 'axis';
+				rings.add( axisLine );
+				// text to the right of the axis line (the notebook's is to the left; here
+				// the left is where the rim's state labels are, and 5M sat on one)
+				for ( const t of ticks ) add( tickFormat( t ), 'tick ' + tickFormat( t ), axis( h( t ) ).addScaledVector( camRight, 6 * FONT_S ), camRight, 'left', UP );
+				add( 'Population', 'title', axis( h( top ) + fontSize ).addScaledVector( camRight, 6 * FONT_S ), camRight, 'left', UP );
+
+				// legend
+				for ( let i = 0; i < keys.length; i ++ ) {
+
+					const z0 = LEGEND_Z + ( keys.length / 2 - i - 1 ) * LEGEND_ROW;
+					add( keys[ i ], 'legend ' + keys[ i ], new THREE.Vector3( LEGEND_X + LEGEND_TEXT, LEGEND_THICK, z0 + LEGEND_SQ / 2 ), new THREE.Vector3( 1, 0, 0 ), 'left' );
+
+				}
+
+				labels = await hierarchyLabels( { descendants: () => wrappers }, labelIds, labelPositions, {
+					font: '/examples/fonts/Roboto-Regular.ttf',
+					fontSize,
+					color: 0x222222,
+					outlineWidth: 0.25, outlineColor: 0xffffff,
+					leafOffset: 0, internalOffset: 0,
+					orient: w => basisQuaternion( w.along, w.up ),
+					camera,
+					billboard: false
+				} );
+
+				for ( const l of labels.labels ) { l.object.anchorX = l.node.anchorX; l.anchorX = l.node.anchorX === 'left' ? 'start' : l.node.anchorX === 'right' ? 'end' : 'center'; }
+				labels.batched.sync();
+				scene.add( labels.group );
+
+				// refit with the label corners in the frame
+				const labelCorners = labels.labels.flatMap( l => {
+
+					const bb = l.object.textRenderInfo.blockBounds;
+					l.object.updateMatrixWorld( true );
+					return [ [ bb[ 0 ], bb[ 1 ] ], [ bb[ 2 ], bb[ 1 ] ], [ bb[ 0 ], bb[ 3 ] ], [ bb[ 2 ], bb[ 3 ] ] ]
+						.map( ( [ u, v ] ) => new THREE.Vector3( u, v, 0 ).applyMatrix4( l.object.matrixWorld ) );
+
+				} );
+
+				target = frame( cellPoints.concat( labelCorners ) );
+
+				/* ---------------- renderer ---------------- */
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'cells:', marks.length, 'states:', x.domain().length, 'series:', series.length,
+					'ticks:', ticks.map( tickFormat ).join( ' ' ), 'max height:', h( y.domain()[ 1 ] ).toFixed( 3 ),
+					'labels:', labels.count, 'turned:', turned, 'flipped:', labels.flipped,
+					'em px at 400x250:', ( fontSize * pxPerUnit ).toFixed( 2 ) );
+
+				const controls = attachOrbit( camera, renderer.domElement, target );
+				window.d33dev = { camera, controls, labels };
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: 0, links: 0, cells: series.length * series[ 0 ].length, labels: wrappers.length },
+					pickables: group.children,
+					labels
+				} );
+
+			}
+
+			function animate() {
+
+				labels.update( camera ); // per-frame flip (plane fixed): reads left-to-right and upright from any side
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
