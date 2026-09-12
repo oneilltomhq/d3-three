@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - scatterplot matrix lifted to one 3D scatter</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 scatterplot matrix (penguins) lifted to one 3D scatter: culmen length × culmen depth × flipper length, body mass as radius</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import { register } from 'd33';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+			import { hierarchyLabels } from '/src/labels.js';
+			import { cubeAxes } from '/src/axes3.js';
+			import { VectorFont } from 'lib3/sdf-text';
+
+			let renderer, scene, camera, labels;
+
+			/* ---------------- layouts/splom.md ----------------
+			   The notebook draws every pair of the four numeric columns because
+			   a page cannot show three at once. Here the first three columns
+			   are the three axes of one cube and the fourth is sphere radius,
+			   so every penguin is one sphere and every pairwise cell of the
+			   matrix is one face of this scatter. */
+
+			const SIDE = 20;                              // world units of the cube
+			const RADIUS = [ 0.12, 0.3 ];                 // sphere radius over the body-mass domain
+			const FONT = '/examples/fonts/Roboto-Regular.ttf';
+			const TICK_PX = 7;                            // tick label em at the target distance, 400x250
+			const TITLE_PX = 9;                           // axis title em (the notebook: bold 10px vs 10px ticks)
+			const GAP = 0.35;                             // axis-to-text gap, world units
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data + scales (as the notebook's chart cell) ---------------- */
+
+				const data = d3.csvParse(
+					await fetch( '/gallery/dots/splom.v2/files/penguins.csv' ).then( r => r.text() ),
+					d3.autoType
+				);
+
+				// the notebook's columns: every numeric column of the first row
+				const columns = data.columns.filter( d => typeof data[ 0 ][ d ] === 'number' );
+				const [ cx, cy, cz, cr ] = columns;
+
+				// one linear scale per column on the notebook's domain (d3.extent
+				// skips the NaN rows), the three axes onto the cube's edge
+				const scales = new Map( columns.map( c => [ c, d3.scaleLinear()
+					.domain( d3.extent( data, d => d[ c ] ) )
+					.range( [ 0, SIDE ] ) ] ) );
+
+				// body mass -> sphere radius, linear over its domain
+				const radius = scales.get( cr ).copy().range( RADIUS );
+
+				// the notebook's colour scale: species in order of first appearance
+				const color = d3.scaleOrdinal()
+					.domain( data.map( d => d.species ) )
+					.range( d3.schemeCategory10 );
+
+				// one sphere per penguin with all four values (the notebook drops
+				// a row from a cell when either of that cell's values is NaN; a
+				// point of this scatter needs all four)
+				const rows = data.filter( d => columns.every( c => ! isNaN( d[ c ] ) ) );
+
+				const ticks = new Map( columns.map( c => [ c, scales.get( c ).ticks( 6 ) ] ) ); // the notebook's .ticks(6)
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.2 ) );
+
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.8 );
+				sun.position.set( 1, 2, 1.5 ).normalize();
+				scene.add( sun );
+
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				/* ---------------- marks: one sphere Mesh per penguin ---------------- */
+
+				const materials = new Map(); // species -> material
+				const nodeGroup = new THREE.Group();
+				nodeGroup.name = 'penguins';
+				scene.add( nodeGroup );
+
+				const marks = [];
+				const points = [];
+
+				rows.forEach( ( d, i ) => {
+
+					if ( ! materials.has( d.species ) ) {
+
+						const c = new THREE.Color( color( d.species ) );
+						materials.set( d.species, new THREE.MeshStandardNodeMaterial( {
+							color: c, emissive: c, emissiveIntensity: 0.15, roughness: 0.6, metalness: 0
+						} ) );
+
+					}
+
+					const mesh = new THREE.Mesh(
+						new THREE.SphereGeometry( radius( d[ cr ] ), 14, 10 ),
+						materials.get( d.species )
+					);
+					mesh.position.set( scales.get( cx )( d[ cx ] ), scales.get( cy )( d[ cy ] ), scales.get( cz )( d[ cz ] ) );
+					mesh.name = `${ d.species } ${ i }`;
+					nodeGroup.add( mesh );
+
+					marks.push( { id: 'n' + i, kind: 'node', object: mesh } );
+					points.push( mesh.position );
+
+				} );
+
+				/* ---------------- camera + axes + labels ----------------
+				   The em sizes are TICK_PX / TITLE_PX at the target distance at
+				   400x250, which depends on the fit, which depends on the label
+				   extents: iterate the fit three times as d3_force does. */
+
+				const font = await VectorFont.load( FONT );
+				const measure = ( text, em ) => {
+
+					let units = 0;
+					for ( let i = 0; i < text.length; i ++ ) {
+
+						units += font.advanceWidth( text[ i ] );
+						if ( i ) units += font.kerning( text[ i - 1 ], text[ i ] );
+
+					}
+
+					return units / font.unitsPerEm * em;
+
+				};
+
+				const cube = new THREE.Box3( new THREE.Vector3( 0, 0, 0 ), new THREE.Vector3( SIDE, SIDE, SIDE ) );
+				const cubeCorners = [];
+				for ( let i = 0; i < 8; i ++ ) cubeCorners.push( new THREE.Vector3( i & 1 ? SIDE : 0, i & 2 ? SIDE : 0, i & 4 ? SIDE : 0 ) );
+
+				const view = { elevation: 25, azimuth: 35, fill: 0.85 };
+				let target = frameCamera( camera, cube, { ...view, points: points.concat( cubeCorners ) } );
+
+				let pxPerUnit, tickSize, titleSize, axes;
+
+				const fit = () => {
+
+					pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+					tickSize = TICK_PX / pxPerUnit;
+					titleSize = TITLE_PX / pxPerUnit;
+
+				};
+
+				for ( let i = 0; i < 3; i ++ ) {
+
+					fit();
+					axes = cubeAxes( {
+						axes: [ cx, cy, cz ].map( c => ( { name: c, scale: scales.get( c ), ticks: ticks.get( c ) } ) ),
+						side: SIDE, gap: GAP, tickSize, titleSize, measure
+					} );
+					target = frameCamera( camera, cube, { ...view, points: points.concat( cubeCorners, axes.corners ) } );
+
+				}
+
+				// the sizes the axes were built with are the ones the batches use;
+				// `pxFinal` is what they measure at the settled camera
+				const pxFinal = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+				scene.add( axes.group );
+
+				// two batches from the one axes layout — ticks at the tick em,
+				// the three column names at the title em — composed into the one
+				// `labels` object register() reads (count, dump, update)
+				const batch = async ( wrappers, fontSize, name ) => hierarchyLabels( { descendants: () => wrappers }, axes.ids, axes.positions, {
+					font: FONT,
+					fontSize,
+					color: 0x333333,
+					outlineWidth: 0.25, outlineColor: 0xffffff,
+					leafOffset: 0, internalOffset: 0,
+					orient: axes.orient,
+					camera,
+					billboard: false,
+					name
+				} );
+
+				const isTitle = w => /^a[xyz]$/.test( axes.ids.get( w ) );
+				const tickLabels = await batch( axes.wrappers.filter( w => ! isTitle( w ) ), tickSize, 'ticks' );
+				const titleLabels = await batch( axes.wrappers.filter( isTitle ), titleSize, 'titles' );
+				scene.add( tickLabels.group, titleLabels.group );
+
+				labels = {
+					count: tickLabels.count + titleLabels.count,
+					flipped: tickLabels.flipped + titleLabels.flipped,
+					dump: () => tickLabels.dump().concat( titleLabels.dump() ),
+					update: cam => tickLabels.update( cam ) + titleLabels.update( cam ),
+					ticks: tickLabels, titles: titleLabels
+				};
+
+				/* ---------------- renderer ---------------- */
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'rows:', rows.length, 'of', data.length,
+					'columns:', columns.join( ',' ),
+					'ticks:', columns.map( c => ticks.get( c ).length ).join( '+' ),
+					'tickSize:', tickSize.toFixed( 3 ), 'titleSize:', titleSize.toFixed( 3 ), 'px:', ( tickSize * pxFinal ).toFixed( 2 ), '/', ( titleSize * pxFinal ).toFixed( 2 ),
+					'labels:', labels.count, 'flipped:', labels.flipped );
+
+				const controls = attachOrbit( camera, renderer.domElement, target );
+				window.d33dev = { camera, controls, labels };
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: rows.length, links: 0, labels: axes.count },
+					pickables: nodeGroup.children,
+					labels
+				} );
+
+			}
+
+			function animate() {
+
+				labels.update( camera ); // per-frame flip (plane fixed) so axis text never reads backwards
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
