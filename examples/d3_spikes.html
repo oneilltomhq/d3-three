@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - spike map, spikes standing up</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 spike map (US county population, 2016): the map lies flat, every spike stands up</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"topojson-client": "/examples/jsm/vendor/topojson-client.js",
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import * as topojson from 'topojson-client';
+			import { register } from 'd33';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
+			import { VectorFont } from 'lib3/sdf-text';
+			import { spikeGeometry, groundGeometry } from '/src/spike.js';
+
+			let renderer, scene, camera, labels;
+
+			/* ---------------- layouts/spikes.md ----------------
+			   The notebook's pre-projected Albers map (975 x 610 px) lies in the
+			   ground plane (y = 0, up +y), 20 world units wide; every county's
+			   spike, a flat triangle in the notebook, stands up along +y with its
+			   height the notebook's population scale. */
+
+			const WIDTH = 975, HEIGHT = 610;          // the notebook's SVG size (the pre-projected bbox)
+			const SIDE = 20;                          // world units of the map's width
+			const S = SIDE / WIDTH;                   // notebook px -> world units
+			const H = HEIGHT * S;                     // map depth in world units (12.51)
+			const THICK = 0.05;                       // ground slab thickness
+			const SPIKE_W = 7 * S;                    // the notebook's 7 px base width (0.144)
+			const SPIKE_MAX = 6;                      // the notebook's 200 px range, in world units
+			const TIP = 0.05;                         // the mark origin sits this fraction of the height below the apex
+			const FONT = '/examples/fonts/Roboto-Regular.ttf';
+			const LEGEND_PX = 10;                     // the notebook's 10px sans-serif legend
+			const LEGEND_AT = [ 886, 592 ];           // the notebook's translate(886,592)
+			const LEGEND_STEP = 20;                   // the notebook's 20 px between legend spikes
+			const LIFT = 0.012;                       // borders and labels above the ground face
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data + d3 layout (the notebook's cells, verbatim) ---------------- */
+
+				const base = '/gallery/dots/spike-map.v2/files/';
+				const [ us, populationRaw ] = await Promise.all( [
+					fetch( base + 'counties-albers-10m.json' ).then( r => r.json() ),
+					fetch( base + 'population.json' ).then( r => r.json() )
+				] );
+
+				// the notebook's `population` cell
+				const population = populationRaw
+					.slice( 1 ) // removes a header line
+					.map( ( [ p, state, county ] ) => ( { state, fips: `${ state }${ county }`, population: + p } ) );
+
+				// `statemap`, `countymap`, `statemesh`, `centroid`
+				const states = topojson.feature( us, us.objects.states ).features;
+				const statemap = new Map( states.map( d => [ d.id, d ] ) );
+				const countymap = new Map( topojson.feature( us, us.objects.counties ).features.map( d => [ d.id, d ] ) );
+				const statemesh = topojson.mesh( us, us.objects.states, ( a, b ) => a !== b );
+				const path = d3.geoPath();
+				const centroid = feature => path.centroid( feature );
+
+				// the chart cell: join, filter, sort descending by population
+				const data = population.map( d => ( {
+					...d,
+					county: countymap.get( d.fips ),
+					state: statemap.get( d.state )
+				} ) )
+					.filter( d => d.county )
+					.sort( ( a, b ) => d3.descending( a.population, b.population ) );
+
+				// the notebook's length scale, [0, 200] px -> [0, SPIKE_MAX] world units
+				const length = d3.scaleLinear( [ 0, d3.max( data, d => d.population ) ], [ 0, SPIKE_MAX ] );
+				const format = d3.format( ',.0f' );
+
+				// notebook (x, y) -> world (x, z): x -> x·S, y -> y·S − H, so the
+				// notebook's top edge (north) is the far edge from camera A and its
+				// left edge the left edge: seen from above the map is not mirrored.
+				const toWorld = ( x, y ) => new THREE.Vector3( x * S, 0, y * S - H );
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.0 ) );
+
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.6 );
+				sun.position.set( 1.2, 2, 1 ).normalize();
+				scene.add( sun );
+
+				camera = new THREE.PerspectiveCamera( 35, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				/* ---------------- ground: one Mesh per state (not marks, not pickable) ----------------
+				   The notebook fills the nation #ddd and strokes the internal state
+				   borders white. Here every state is a thin grey slab (its
+				   MultiPolygon triangulated by THREE.ShapeUtils.triangulateShape
+				   inside ExtrudeGeometry, depth THICK, no bevel) and the borders
+				   are one white LineSegments of the statemesh, lifted above the
+				   face. */
+
+				const ground = new THREE.Group();
+				ground.name = 'ground';
+				scene.add( ground );
+
+				const groundMaterial = new THREE.MeshStandardNodeMaterial( { color: 0xdddddd, roughness: 0.9, metalness: 0 } );
+
+				for ( const state of states ) {
+
+					const mesh = new THREE.Mesh( groundGeometry( state.geometry, { scale: S, offsetZ: - H, thickness: THICK } ), groundMaterial );
+					mesh.name = state.properties.name;
+					ground.add( mesh );
+
+				}
+
+				const borderPoints = [];
+				for ( const line of statemesh.coordinates ) {
+
+					for ( let i = 1; i < line.length; i ++ ) {
+
+						const a = toWorld( line[ i - 1 ][ 0 ], line[ i - 1 ][ 1 ] ), b = toWorld( line[ i ][ 0 ], line[ i ][ 1 ] );
+						a.y = b.y = THICK + LIFT;
+						borderPoints.push( a, b );
+
+					}
+
+				}
+
+				const borders = new THREE.LineSegments(
+					new THREE.BufferGeometry().setFromPoints( borderPoints ),
+					new THREE.LineBasicNodeMaterial( { color: 0xffffff } ) );
+				borders.name = 'state borders';
+				scene.add( borders );
+
+				/* ---------------- marks: one Mesh per county with population ----------------
+				   A narrow square pyramid (base SPIKE_W, the notebook's 7 px) of
+				   height length(population), standing on the ground at the county's
+				   centroid (d3.geoPath().centroid on the pre-projected geometry, as
+				   the notebook). One shared unit geometry, scaled per spike. Its
+				   origin is TIP (5 %) of the height below the apex, inside the
+				   solid, so the mark position is the spike's tip pixel and a ray
+				   through it hits the spike's own faces rather than a vertex. */
+
+				const unitSpike = spikeGeometry( { tip: TIP } );
+				const spikeMaterial = new THREE.MeshStandardNodeMaterial( {
+					color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 0.55,
+					roughness: 0.7, metalness: 0,
+					transparent: true, opacity: 0.65
+				} );
+
+				const spikes = new THREE.Group();
+				spikes.name = 'spikes';
+				scene.add( spikes );
+
+				const marks = [];
+				const tips = [];
+
+				data.forEach( ( d, i ) => {
+
+					const [ cx, cy ] = centroid( d.county );
+					const h = length( d.population );
+					const p = toWorld( cx, cy );
+
+					const mesh = new THREE.Mesh( unitSpike, spikeMaterial );
+					mesh.scale.set( SPIKE_W, h, SPIKE_W );
+					mesh.position.set( p.x, THICK + h * ( 1 - TIP ), p.z );
+					mesh.name = `${ d.county.properties.name }, ${ d.state.properties.name }\n${ format( d.population ) }`;
+					spikes.add( mesh );
+
+					marks.push( { id: 's' + i, kind: 'cell', object: mesh } );
+					tips.push( new THREE.Vector3( p.x, THICK + h, p.z ) );
+
+				} );
+
+				/* ---------------- legend: the notebook's reference spikes (not marks) ----------------
+				   `length.ticks(4).slice(1)` at translate(886,592), 20 px apart,
+				   each spike at its scale height; the value in 10px #777 below. */
+
+				const legendValues = length.ticks( 4 ).slice( 1 );
+				const legendText = length.tickFormat( 4, 's' );
+				const legend = new THREE.Group();
+				legend.name = 'legend';
+				scene.add( legend );
+
+				const legendBases = legendValues.map( ( v, i ) => {
+
+					const p = toWorld( LEGEND_AT[ 0 ] + LEGEND_STEP * i, LEGEND_AT[ 1 ] );
+					const h = length( v );
+					const mesh = new THREE.Mesh( unitSpike, spikeMaterial );
+					mesh.scale.set( SPIKE_W, h, SPIKE_W );
+					mesh.position.set( p.x, THICK + h * ( 1 - TIP ), p.z );
+					mesh.name = 'legend ' + legendText( v );
+					legend.add( mesh );
+					tips.push( new THREE.Vector3( p.x, THICK + h, p.z ) );
+					return p;
+
+				} );
+
+				/* ---------------- camera ---------------- */
+
+				// fitted to the projected points themselves (the map's four ground
+				// corners, every spike tip, the legend's text corners), not to the
+				// bounding box's corners: box corners 6 units above the far corners
+				// of the map would leave the top of the frame empty.
+				const fitPoints = [ toWorld( 0, 0 ), toWorld( WIDTH, 0 ), toWorld( WIDTH, HEIGHT ), toWorld( 0, HEIGHT ) ].concat( tips );
+				const box = new THREE.Box3();
+				for ( const p of fitPoints ) box.expandByPoint( p );
+
+				const view = { elevation: 35, azimuth: 20, fill: 0.85 };
+				let target = frameCamera( camera, box, { ...view, points: fitPoints } );
+
+				/* ---------------- labels: the legend values, lying on the ground ----------------
+				   One Text per legend spike, the notebook's 10px scaled (10·S =
+				   0.205 world units), #777, text-anchor middle (anchor start,
+				   shifted left by half the measured width) one em below the base
+				   as the notebook's dy 1em. Flat: +x baseline, +y = north (−z). */
+
+				const fontSize = LEGEND_PX * S;
+				const font = await VectorFont.load( FONT );
+				const measure = text => {
+
+					let units = 0;
+					for ( let i = 0; i < text.length; i ++ ) {
+
+						units += font.advanceWidth( text[ i ] );
+						if ( i ) units += font.kerning( text[ i - 1 ], text[ i ] );
+
+					}
+
+					return units / font.unitsPerEm * fontSize;
+
+				};
+
+				const flat = basisQuaternion( new THREE.Vector3( 1, 0, 0 ), new THREE.Vector3( 0, 0, - 1 ) );
+				const wrappers = [];
+				const labelIds = new Map();
+				const anchors = new Map();
+
+				legendValues.forEach( ( v, i ) => {
+
+					const text = legendText( v );
+					const w = { data: { name: text } };
+					const a = legendBases[ i ].clone();
+					a.x -= measure( text ) / 2;
+					a.z += 0.75 * fontSize; // centre of the line one em below the base
+					a.y = THICK + LIFT;
+					wrappers.push( w );
+					labelIds.set( w, 'legend' + i );
+					anchors.set( w, a );
+					// bottom corners of the text, so the framing includes the legend
+					fitPoints.push( new THREE.Vector3( a.x, a.y, a.z + fontSize / 2 ), new THREE.Vector3( a.x + measure( text ), a.y, a.z + fontSize / 2 ) );
+
+				} );
+
+				for ( const p of fitPoints ) box.expandByPoint( p );
+				target = frameCamera( camera, box, { ...view, points: fitPoints } );
+
+				labels = await hierarchyLabels( { descendants: () => wrappers }, labelIds, anchors, {
+					font: FONT,
+					fontSize,
+					color: 0x777777,
+					outlineWidth: 0.2, outlineColor: 0xffffff,
+					leafOffset: 0,
+					orient: () => flat,
+					camera,
+					billboard: false
+				} );
+				scene.add( labels.group );
+
+				/* ---------------- renderer ---------------- */
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'spikes:', data.length, 'states:', states.length,
+					'max height:', length( data[ 0 ].population ).toFixed( 3 ),
+					'fontSize:', fontSize.toFixed( 3 ), 'px/unit:', pxPerUnit.toFixed( 2 ),
+					'labels:', labels.count, 'flipped:', labels.flipped );
+
+				const controls = attachOrbit( camera, renderer.domElement, target );
+				window.d33dev = { camera, controls, labels, data, length, S, H };
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: 0, links: 0, cells: data.length, labels: legendValues.length },
+					pickables: spikes.children,
+					labels
+				} );
+
+			}
+
+			function animate() {
+
+				labels.update( camera ); // per-frame mirror flip (plane fixed)
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
