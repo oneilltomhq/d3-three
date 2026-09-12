@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - world choropleth on a globe</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 world choropleth (healthy life expectancy, WHO 2016) lifted onto a globe</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"topojson-client": "/examples/jsm/vendor/topojson-client.js",
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import * as topojson from 'topojson-client';
+			import { register } from 'd33';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
+			import { featureGeometry, lineSegmentsGeometry, interiorPoint, lonLatToVector3, tangentFrame } from '/src/globe.js';
+			import { VectorFont } from 'lib3/sdf-text';
+
+			let renderer, scene, camera, labels;
+
+			/* ---------------- layouts/globe.md ----------------
+			   The notebook's equal-earth choropleth put back on the sphere it
+			   came from: one Mesh per country (topojson.feature), coloured by
+			   the notebook's scaleSequential(interpolateYlGnBu) over the
+			   healthy-life-expectancy extent, on a globe of radius 10 over a
+			   dark ocean; the notebook's white countrymesh as one line set;
+			   names of the 30 largest countries flat on the surface. */
+
+			const R = 10;                              // globe radius: 20 units across
+			const EPS = 0.01;                          // land sits this far above the ocean sphere
+			const MAX_DEG = 2;                         // longest triangle edge, degrees of arc
+			const OCEAN = 0x3c4148;                    // plain dark grey
+			const UNKNOWN = '#ccc';                    // no data (the notebook's Plot cell)
+			const LABELS = 30;                         // the 30 largest countries by geoArea
+			const LABEL_PX = 7;                        // label em at the target distance, 400x250
+			const FONT = '/examples/fonts/Roboto-Regular.ttf';
+
+			/* ---------------- the notebook's own cells, verbatim ---------------- */
+
+			const rename = new Map([
+			  ["Antigua and Barbuda", "Antigua and Barb."],
+			  ["Bolivia (Plurinational State of)", "Bolivia"],
+			  ["Bosnia and Herzegovina", "Bosnia and Herz."],
+			  ["Brunei Darussalam", "Brunei"],
+			  ["Central African Republic", "Central African Rep."],
+			  ["Cook Islands", "Cook Is."],
+			  ["Democratic People's Republic of Korea", "North Korea"],
+			  ["Democratic Republic of the Congo", "Dem. Rep. Congo"],
+			  ["Dominican Republic", "Dominican Rep."],
+			  ["Equatorial Guinea", "Eq. Guinea"],
+			  ["Iran (Islamic Republic of)", "Iran"],
+			  ["Lao People's Democratic Republic", "Laos"],
+			  ["Marshall Islands", "Marshall Is."],
+			  ["Micronesia (Federated States of)", "Micronesia"],
+			  ["Republic of Korea", "South Korea"],
+			  ["Republic of Moldova", "Moldova"],
+			  ["Russian Federation", "Russia"],
+			  ["Saint Kitts and Nevis", "St. Kitts and Nevis"],
+			  ["Saint Vincent and the Grenadines", "St. Vin. and Gren."],
+			  ["Sao Tome and Principe", "São Tomé and Principe"],
+			  ["Solomon Islands", "Solomon Is."],
+			  ["South Sudan", "S. Sudan"],
+			  ["Swaziland", "eSwatini"],
+			  ["Syrian Arab Republic", "Syria"],
+			  ["The former Yugoslav Republic of Macedonia", "Macedonia"],
+			  // ["Tuvalu", ?],
+			  ["United Republic of Tanzania", "Tanzania"],
+			  ["Venezuela (Bolivarian Republic of)", "Venezuela"],
+			  ["Viet Nam", "Vietnam"]
+			]);
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data (the notebook's hale, world, countries, countrymesh cells) ---------------- */
+
+				const files = '/gallery/maps/world-choropleth.v2/files/';
+				const [ haleText, world ] = await Promise.all( [
+					fetch( files + 'hale.csv' ).then( r => r.text() ),
+					fetch( files + 'countries-50m.json' ).then( r => r.json() )
+				] );
+
+				const hale = d3.csvParse( haleText ).map( d => ( { name: rename.get( d.country ) || d.country, hale: + d.hale } ) );
+				const countries = topojson.feature( world, world.objects.countries );
+				const countrymesh = topojson.mesh( world, world.objects.countries, ( a, b ) => a !== b );
+
+				// the chart cell's colour scale
+				const valuemap = new Map( hale.map( d => [ d.name, d.hale ] ) );
+				const color = d3.scaleSequential( d3.extent( valuemap.values() ), d3.interpolateYlGnBu );
+				const fill = d => color( valuemap.get( d.properties.name ) ) || UNKNOWN;
+
+				const features = countries.features;
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xd8dce2, 2.4 ) );
+
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 4000 );
+				scene.add( camera );
+
+				// The key light rides with the camera (upper right of the view),
+				// so whichever hemisphere is orbited into view is the lit one and
+				// the choropleth colours read the same from every side. Camera A
+				// is fixed, so the reference frame is as deterministic as before.
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.4 );
+				sun.position.set( 12, 20, 30 );
+				camera.add( sun );
+
+				// the ocean: a plain sphere, not a mark
+				const ocean = new THREE.Mesh(
+					new THREE.SphereGeometry( R, 128, 96 ),
+					new THREE.MeshStandardNodeMaterial( { color: OCEAN, roughness: 0.9, metalness: 0 } ) );
+				ocean.name = 'ocean';
+				scene.add( ocean );
+
+				/* ---------------- marks: one Mesh per country ----------------
+				   Geometry from src/globe.js: the feature's polygons unwrapped
+				   across the antimeridian, earcut in lon/lat (Antarctica in a
+				   polar azimuthal plane), longest-edge bisected to <= 2 deg of
+				   arc, on the sphere at R + EPS, local to the mark's own point.
+				   The mark point is the feature's geoCentroid where that lies on
+				   the country, else a point that does (interiorPoint), so the
+				   picking ray through it meets this country's surface. */
+
+				const cells = new THREE.Group();
+				cells.name = 'countries';
+				scene.add( cells );
+
+				const materials = new Map(); // css colour -> material
+				const material = css => {
+
+					if ( ! materials.has( css ) ) {
+
+						materials.set( css, new THREE.MeshStandardNodeMaterial( {
+							color: new THREE.Color( css ), roughness: 0.85, metalness: 0
+						} ) );
+
+					}
+
+					return materials.get( css );
+
+				};
+
+				const ids = new Map();
+				features.forEach( ( f, i ) => ids.set( f, 'c' + i ) );
+
+				const marks = [];
+				const points = new Map();   // feature -> { lon, lat, how }
+				const anchors = new Map();  // feature -> world position of the mark
+				let triangles = 0, offCentroid = 0, known = 0;
+
+				for ( const f of features ) {
+
+					const p = interiorPoint( f, d3 );
+					if ( p.how !== 'centroid' ) offCentroid ++;
+					const origin = lonLatToVector3( p.lon, p.lat, R + EPS );
+
+					const built = featureGeometry( f.geometry, R + EPS, origin, { maxDeg: MAX_DEG } );
+					triangles += built.triangles;
+
+					const css = fill( f );
+					if ( css !== UNKNOWN ) known ++;
+
+					const mesh = new THREE.Mesh( built.geometry, material( css ) );
+					mesh.position.copy( origin );
+					mesh.name = f.properties.name;
+					cells.add( mesh );
+
+					points.set( f, p );
+					anchors.set( f, origin );
+					marks.push( { id: ids.get( f ), kind: 'cell', object: mesh, normal: origin.clone().normalize() } );
+
+				}
+
+				/* ---------------- borders: the notebook's white countrymesh, one LineSegments ---------------- */
+
+				const borders = new THREE.Group();
+				borders.name = 'borders';
+				scene.add( borders );
+
+				const mesh = lineSegmentsGeometry( countrymesh, R + 2 * EPS, { maxDeg: 1 } );
+				const borderLines = new THREE.LineSegments( mesh.geometry, new THREE.LineBasicNodeMaterial( { color: 0xffffff } ) );
+				borderLines.name = 'countrymesh';
+				borders.add( borderLines );
+
+				/* ---------------- camera ----------------
+				   Elevation 20 deg, azimuth 20 deg: the camera looks at
+				   longitude 20 E, so Africa and Europe face it. Fitted to the
+				   globe's own surface (points on the sphere), not to its
+				   bounding cube. */
+
+				const surface = [];
+				for ( let i = 0; i < 400; i ++ ) {
+
+					// Fibonacci sphere: an even sample of the surface
+					const y = 1 - 2 * ( i + 0.5 ) / 400;
+					const r = Math.sqrt( 1 - y * y );
+					const t = i * Math.PI * ( 3 - Math.sqrt( 5 ) );
+					surface.push( new THREE.Vector3( r * Math.cos( t ), y, r * Math.sin( t ) ).multiplyScalar( R + 2 * EPS ) );
+
+				}
+
+				const box = new THREE.Box3( new THREE.Vector3( - R, - R, - R ), new THREE.Vector3( R, R, R ) );
+				const view = { elevation: 20, azimuth: 20, fill: 0.85 };
+				const target = frameCamera( camera, box, { ...view, points: surface } );
+
+				/* ---------------- labels: the 30 largest countries, flat on the surface ----------------
+				   One Text per country, centred on its mark point, lying in the
+				   tangent plane (+x east, +y north, facing outward), lifted 3 EPS
+				   above the land. Centred by measuring the name in the TTF and
+				   starting the block half a width to the west; the per-frame
+				   flip then keeps it readable from any side. */
+
+				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+				const fontSize = LABEL_PX / pxPerUnit;
+
+				const font = await VectorFont.load( FONT );
+				const measure = text => {
+
+					let units = 0;
+					for ( let i = 0; i < text.length; i ++ ) {
+
+						units += font.advanceWidth( text[ i ] );
+						if ( i ) units += font.kerning( text[ i - 1 ], text[ i ] );
+
+					}
+
+					return units / font.unitsPerEm * fontSize;
+
+				};
+
+				const largest = features.slice().sort( ( a, b ) => d3.geoArea( b ) - d3.geoArea( a ) ).slice( 0, LABELS );
+
+				const labelled = [];
+				const labelIds = new Map();
+				const labelAnchors = new Map();
+				const orientations = new Map();
+
+				for ( const f of largest ) {
+
+					const p = points.get( f );
+					const frame = tangentFrame( p.lon, p.lat );
+					const name = f.properties.name;
+
+					const proxy = { data: { name }, feature: f };
+					const anchor = lonLatToVector3( p.lon, p.lat, R + 3 * EPS ).addScaledVector( frame.east, - measure( name ) / 2 );
+
+					labelled.push( proxy );
+					labelIds.set( proxy, ids.get( f ) );
+					labelAnchors.set( proxy, anchor );
+					orientations.set( proxy, basisQuaternion( frame.east, frame.north ) );
+
+				}
+
+				labels = await hierarchyLabels( { descendants: () => labelled }, labelIds, labelAnchors, {
+					font: FONT,
+					fontSize,
+					color: 0x111111,
+					outlineWidth: 0.2, outlineColor: 0xffffff,
+					leafOffset: 0,
+					orient: proxy => orientations.get( proxy ),
+					camera,
+					billboard: false
+				} );
+				scene.add( labels.group );
+
+				// for the worker's verification: mark points and how they were chosen
+				window.__globe = {
+					R, EPS, triangles, known, offCentroid,
+					countries: features.map( f => ( { name: f.properties.name, fill: fill( f ), ...points.get( f ) } ) )
+				};
+
+				/* ---------------- renderer ---------------- */
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'countries:', features.length, 'with data:', known, 'triangles:', triangles,
+					'border segments:', mesh.segments, 'off-centroid marks:', offCentroid,
+					'fontSize:', fontSize.toFixed( 3 ), 'px/unit:', pxPerUnit.toFixed( 2 ),
+					'labels:', labels.count, 'flipped:', labels.flipped );
+
+				const controls = attachOrbit( camera, renderer.domElement, target );
+				window.d33dev = { camera, controls, labels };
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: 0, links: 0, cells: features.length, labels: labelled.length },
+					pickables: cells.children,
+					labels
+				} );
+
+			}
+
+			function animate() {
+
+				labels.update( camera ); // per-frame mirror flip (plane fixed); billboard if enabled
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
