@@ -11,6 +11,9 @@
 //             ( root.descendants().length, root.links().length ) (§C.12);
 //             `cells` defaults to 0; `labels` defaults to `nodes` (sunburst).
 //   target:   optional orbit target; defaults to the centroid of node/cell marks.
+//   planar:   optional; true for a 2D chart rendered flat in the 3D world
+//             (director ruling, handoff/rung0/LOG.md): the depth gate still
+//             reports its ratio but passes with note 'planar by ruling'.
 //   normal:   optional on a mark (unit Vector3 or [x,y,z]); the picking gate
 //             samples a mark from a camera only if it faces it
 //             (dot(normal, camera − mark) > 0). Absent = always eligible.
@@ -37,7 +40,8 @@ const state = {
 	expected: { nodes: 0, links: 0 },
 	target: null,
 	pickables: null,
-	labels: null
+	labels: null,
+	planar: false
 };
 
 // gate thresholds
@@ -53,6 +57,7 @@ export function register( options ) {
 	state.marks = options.marks || [];
 	state.expected = options.expected || { nodes: 0, links: 0 };
 	state.target = options.target || null;
+	state.planar = options.planar === true;
 	state.pickables = options.pickables || null;
 	state.labels = options.labels || null;
 
@@ -206,6 +211,8 @@ function depthGate( positions ) {
 	const extents = [ size.x, size.y, size.z ];
 	const max = Math.max( ...extents );
 	const ratio = max > 0 ? Math.min( ...extents ) / max : 0;
+
+	if ( state.planar ) return { extents, ratio, pass: true, note: 'planar by ruling' };
 
 	return { extents, ratio, pass: ratio >= DEPTH_RATIO };
 
@@ -429,6 +436,7 @@ const api = {
 			} ),
 			labels: state.labels && typeof state.labels.dump === 'function' ? state.labels.dump() : [],
 			expected: { nodes: state.expected.nodes | 0, links: state.expected.links | 0, cells: state.expected.cells | 0 },
+			planar: state.planar,
 			target: { x: target.x, y: target.y, z: target.z },
 			gates,
 			env: environment()

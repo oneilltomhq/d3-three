@@ -3,12 +3,13 @@
 	"gates": {
 		"depth": {
 			"extents": [
-				19.156044551515087,
-				16.047477334110976,
-				19.950355832364988
+				15.702310162469402,
+				0,
+				15.86389728171655
 			],
-			"ratio": 0.8043704818576486,
-			"pass": true
+			"ratio": 0,
+			"pass": true,
+			"note": "planar by ruling"
 		},
 		"counts": {
 			"nodes": 0,
@@ -21,24 +22,24 @@
 		},
 		"angle": {
 			"a": {
-				"width": 0.459395971903545,
-				"height": 0.6578997786470908,
-				"area": 0.3022365082267074
+				"width": 0.6392201346354667,
+				"height": 0.7011574179213824,
+				"area": 0.4481939390843622
 			},
 			"b": {
-				"width": 0.4612085275811628,
-				"height": 0.6721108491332202,
-				"area": 0.30998325510005753
+				"width": 0.6617490583963757,
+				"height": 0.8328415086284291,
+				"area": 0.55113208412828
 			},
 			"threshold": 0.01,
 			"pass": true
 		},
 		"picking": {
-			"sampled": 38,
+			"sampled": 20,
 			"sampledA": 20,
 			"sampledB": 20,
-			"eligibleA": 144,
-			"eligibleB": 135,
+			"eligibleA": 251,
+			"eligibleB": 251,
 			"hitA": 20,
 			"hitB": 20,
 			"pickables": 251,
@@ -46,8 +47,8 @@
 			"pass": true
 		},
 		"labels": {
-			"count": 79,
-			"expectedNodes": 79,
+			"count": 93,
+			"expectedNodes": 93,
 			"pass": true
 		},
 		"pass": true
@@ -57,10 +58,11 @@
 		"links": 0,
 		"cells": 251
 	},
+	"planar": true,
 	"target": {
-		"x": 0.49823153798849057,
-		"y": 0.9538477826472658,
-		"z": 0.4626912416331629
+		"x": 0.9988024894956554,
+		"y": -1.0767554160835409,
+		"z": 0.4894645274786865
 	},
 	"env": {
 		"backend": "WebGPUBackend",

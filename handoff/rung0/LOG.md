@@ -328,3 +328,18 @@ Two things had to change, both in `test/e2e/puppeteer.js`:
 `examples/screenshots/d3_blank.jpg` was regenerated and now shows the blank
 page's actual clear colour (`#0b0b12`). The blank page still fails depth, angle
 and picking and passes counts, exactly as before.
+
+## Director ruling: planar lifts (after eyeballing sunburst and treemap)
+
+The user's verdict on the sphere sunburst and the stacked treemap: the 3D adds
+nothing the 2D chart did not already say. New rule for the ladder: lift a
+chart into 3D only where the third axis obviously wins (cluster cone, tree
+fan, bundling sphere, force, pack, tree of life). Where it does not, render
+the 2D chart faithfully inside the 3D world — flat, orbitable, properly lit,
+labels in the plane as the notebook places them — and be proud of that.
+
+Gate consequence: a page may `register({ planar: true })`. The depth gate
+still reports the ratio but passes with `note: 'planar by ruling'`. Counts,
+angle (two cameras still see different projections of a plane), picking and
+labels apply unchanged. `planar` is written into the marks JSON so three-rs
+knows which class the example is in.

@@ -676,6 +676,7 @@ async function writeReport( file, report ) {
 	await fs.writeFile( `marks/${ file }.json`, JSON.stringify( {
 		file,
 		expected: report.expected,
+		planar: report.planar === true,
 		marks: report.marks,
 		labels: report.labels || []
 	}, null, '\t' ) + '\n' );
@@ -684,6 +685,7 @@ async function writeReport( file, report ) {
 		file,
 		gates: report.gates,
 		expected: report.expected,
+		planar: report.planar === true,
 		target: report.target,
 		env: report.env
 	}, null, '\t' ) + '\n' );

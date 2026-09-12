@@ -1,157 +1,115 @@
-# sunburst → sphere
+# sunburst, flat
 
 Source: `hierarchies/sunburst.v2` (flare-2.json: 252 nodes, 220 leaves, height 4,
-10 top-level packages). 2D: `d3.partition().size([2π, radius])` on the value-summed,
-value-sorted hierarchy; one `d3.arc` per descendant with depth > 0; rainbow colour by
-top-level ancestor; fill-opacity 0.6; labels on cells wide enough.
+10 top-level packages). 2D: `d3.partition().size([2π, 464])` on the value-summed,
+value-sorted hierarchy; one `d3.arc` per descendant with depth > 0 (inner radius
+`y0`, outer `y1 − 1`, pad angle `min((x1−x0)/2, 0.005)` at pad radius 232); rainbow
+colour by top-level ancestor at fill-opacity 0.6; 10 px labels on cells with
+`(y0+y1)/2 · (x1−x0) > 10`, rotated along the radius, turned 180° on the left half.
 
 Built as `examples/d3_sunburst.html`; this note is kept true to what runs.
 
-## The lift
+**Retired: the sphere.** The first build lifted the disc onto a sphere (angle →
+longitude, depth → colatitude band, value → radial thickness, 251 shell-sector
+solids, `src/shell.js`). The user eyeballed it and ruled that the third axis added
+nothing the disc did not already say; the director's ruling (handoff/rung0/LOG.md,
+"planar lifts") is to lift only where the third axis obviously wins and otherwise
+render the 2D chart faithfully inside the 3D world. `src/shell.js` stays in the tree
+for history; the page no longer imports it. What was learned there and still holds:
+outward extrusion of a sunburst cannot pass the picking gate (slivers hide behind
+taller neighbours from every oblique camera; 0/180 cameras at any thickness), and
+a text frame chosen with a fixed facing must be turned about its normal, not its
+up axis, to read from the camera.
 
-The disc becomes a sphere with the root at the north pole. Angle becomes longitude,
-depth becomes a latitude band, and the value that the 2D chart only shows as arc
-length also becomes radial thickness: bigger subtrees are thicker shell sectors.
+## The chart in the 3D world
 
-What d3.partition still decides (run exactly as the notebook does, `.size([2π, R])`):
-- `x0, x1` of every cell: its longitude span, verbatim. The pad angle is applied as
-  in the notebook (`min((x1−x0)/2, 0.005)`), half on each side as `d3.arc` does.
-- `y0, y1`: used only for the depth index (`depth = node.depth`).
-- the value sort and the sum.
+The notebook's disc, in the `xz` plane, `y` up, 20 world units across: one
+notebook px is `S = 20 / 928` units and every px number of the notebook is
+multiplied by `S`. Angle 0 is 12 o'clock and angles run clockwise seen from above:
+notebook `(x, y) = (r sin a, −r cos a)` becomes world `(x, z)`.
 
-What the sphere adds:
-- colatitude band for depth d (1..H, H = root.height): `[Θ (d−1)/H, Θ d/H − 0.4°]`,
-  with `Θ = 150°` so the deepest ring stops short of the south pole and a hole stays
-  open to look through. The 0.4° taken off the far edge of every band is the
-  analogue of `outerRadius − 1`.
-- outer radius `R = 10`: every cell's outer face lies on this one sphere. Radial
-  thickness of a cell: `h = 0.005R + 0.15R · (value / root.value)^(1/2)` (0.05 … 1.55,
-  a shallow cap; the draft's `0.02R + 0.6R·√` reached 4.24 and was cut on review).
-  Every cell is a solid shell sector from radius `R − h` to `R`: outer and inner
-  spherical patches plus four side walls. Tessellation: one segment per 3° of
-  longitude, rounded up to an even count (min 2), 4 segments of latitude.
-- Colour: the notebook's `interpolateRainbow` quantised over `children.length + 1`,
-  by top-level ancestor, then mixed 40 % toward white and used **opaque**. That is the
-  notebook's `fill-opacity 0.6` over a white page baked into the colour: a really
-  transparent shell shows its own far side through the near side and the rings stop
-  reading (tried; see "Changed", below).
-- No inner sphere: the cells reach inward to `R − h_max` and would cut through it.
-  (When `EXTRUDE = +1`, below, a faint grey sphere of `0.98R` is added, not a mark.)
+What d3 decides, verbatim: `partition` gives every cell `x0, x1, y0, y1`; the sort,
+the sum and the colour scale are the notebook's; the visible set is
+`descendants().filter(d => d.depth && d.x1 − d.x0 > 0.001 && d.y1 > d.y0)` (251 —
+no cell is thinner than 0.0017 rad, so this is every non-root cell).
 
-Extents of the mark positions `19.16 × 16.05 × 19.95`, depth ratio `0.804`.
+What the page adds:
+- Each cell is a **thin slab**: the notebook's arc outline (inner radius `y0·S`,
+  outer `(y1 − 1)·S`, the pad applied as `d3.arc` applies it — a linear pad, so the
+  angular pad at radius `r` is `asin(rp / r · sin(pa / 2))` with `rp = 232·S`, and an
+  edge collapses to its mid-angle when the pad would exceed the span) extruded
+  `THICKNESS = 0.3` (1.5 % of the diameter) along `+y`, so it has a lit edge and a top
+  face. Outline tessellation: one segment per 2° of arc, min 1 per edge.
+- Colour: the notebook's `interpolateRainbow` quantised over `children.length + 1`
+  by top-level ancestor, mixed 40 % toward white and used opaque (fill-opacity 0.6
+  over the white page, baked in, so the slab edges stay clean).
+- Lighting: hemisphere + one directional light; the disc reads as a lit object
+  rather than a flat fill. Nothing else: no base plate, no inner disc.
 
-**Changed from the draft of this note, and why.** The draft extruded every cell
-*outward*, from `R` to `R + h`, so that big subtrees stand out as towers, and said
-the mark position is the mean of the four corners at mid-thickness. Three things
-did not survive contact with the picking gate (rule: sample cells whose radial
-normal faces the camera, `dot(normal, camera − mark) > 0`, raycast each at its own
-pixel, all must hit themselves):
-
-1. *The corner-mean is not inside the cell.* A band is 37° of colatitude; the chord
-   midpoint of a narrow cell sits at `0.947 · (R + h/2)`, which is below the inner
-   surface of every cell thinner than 1.1 — most of them. Replaced by the centre of
-   the cell's outer face (mid-longitude, mid-colatitude, radius `R`), pulled
-   `1e-4` inside so a grazing pick ray enters the cell's own face first; with even
-   segment counts that point is a vertex of the outer patch, so it is exactly on the
-   tessellated surface.
-2. *Outward towers occlude their neighbours.* A sunburst is mostly slivers (a leaf
-   is 0.2°–1° of longitude) next to cells up to 4 units taller; from any oblique
-   direction a sliver's face is behind a taller neighbour's wall. Measured on the
-   outer-face centres: for every one of 180 cameras (elevation 20°–45°, azimuth
-   0°–87° in 3° steps) at least one of the 20 sampled front-facing cells per camera
-   is hidden by a neighbour (6–19 of 20 hit, mean 12.6; `EXTRUDE = +1` at the shipped
-   camera: A 17/20, B 18/20). A facing margin does not fix it either: at
-   `cos > 0.7` camera B still has 3–12 misses of 30–60. This is genuine occlusion,
-   not a bug — the pixel of that cell really shows the neighbour. Retried on
-   review with the shallow cap (`h ≤ 1.55`, mark at the outer-face centre): still
-   0 of 180 cameras pass (11–20 of 20 hit, mean 16.6), so the ruling stands on
-   evidence: outward cannot pass §B.10 at any thickness a sunburst's slivers allow.
-3. So the thickness grows *inward*: outer faces all on the sphere `R`, inner
-   faces at `R − h`. The outer surface is then smooth, front-facing means visible,
-   and the gate passes from every one of those 180 cameras (20/20 both, at the
-   shallow cap too). The
-   value is still radial thickness, read through the south-pole hole and, in the
-   live page, by orbiting under the sphere. The page keeps `EXTRUDE = ±1` as one
-   constant so the outward version can be looked at (it is the more striking
-   render; `handoff/ladder/sunburst-outward.jpg`), but it cannot pass §B.10 as
-   the gate is written.
+Extents of the mark positions `15.70 × 0 × 15.86`; the page registers
+`planar: true` and the depth gate passes by ruling (ratio 0 reported).
 
 ## Marks
 
-- cell: one `Mesh` per `root.descendants().filter(d => d.depth)` (251), geometry
-  from `src/shell.js`. The mesh's position is the centre of the cell's outer face
-  (`spherical(R − 1e-4, (colat0+colat1)/2, (lon0+lon1)/2)`) and the geometry is
-  built in local coordinates around it, so `getWorldPosition` is that point and
-  that is what `marks/d3_sunburst.json` carries. Each mark carries `normal`: the
-  unit vector from the origin through it (used by the picking gate to choose
-  front-facing cells per camera).
-- no node or link marks. `expected = { nodes: 0, links: 0, cells: 251 }`.
-- `pickables`: the 251 cell meshes.
-- labels: see below (79 placed, not marks).
+- cell: one `Mesh` per visible cell (251), `kind: 'cell'`. The geometry is built in
+  local coordinates around the **centre of the slab's top face at mid-angle and
+  mid-radius** (the notebook's label point, `(y0+y1)/2`), height `THICKNESS`; the
+  mesh sits there, so `getWorldPosition` is that point and it is what
+  `marks/d3_sunburst.json` carries. Each mark carries `normal: [0, 1, 0]`.
+- no node or link marks. `expected = { nodes: 0, links: 0, cells: 251, labels: 93 }`.
+- `pickables`: the 251 slabs. All top faces are coplanar, so nothing occludes a
+  mark from any camera above the plane.
 
 ## Labels
 
-Built with `src/labels.js` (lib3 sdf-text, rung 3), not marks. Candidates are the
-notebook's: cells with `(y0+y1)/2 · (x1−x0) > 10` in the notebook's own units
-(partition size `[2π, 464]`), 93 of the 251; **79 are placed** (below). `hierarchyLabels`
-is handed a pseudo-root `{ descendants: () => subset }` over the real d3 nodes, ids
-`c<i>` from the marks.
+`src/labels.js` (lib3 sdf-text, Roboto Regular), not marks. Exactly the notebook's
+set: cells with `(y0+y1)/2 · (x1−x0) > 10` in notebook units, 93. `hierarchyLabels`
+is handed a pseudo-root `{ descendants: () => subset }` over the real d3 nodes.
 
-Placement is the notebook's radial, centred text (`rotate(x−90) translate(y,0)`,
-`text-anchor: middle`) on the sphere: each label lies in the tangent plane of the
-outer face, centred on the cell's mark point lifted `0.02` along the normal so it
-sits above the surface, **baseline along the meridian** (the sphere's radial
-direction, since a 2D radius became a meridian). The frame is `(south, west)` or its
-half-turn about the normal `(north, east)`, chosen so that the baseline projects
-rightward from camera A — the notebook's `rotate(x < 180 ? 0 : 180)`, decided by the
-camera instead of the angle. Both frames face outward and are rotations, so
-`labels.js`'s own mirror check (which assumes local +y projects upward) flips
-nothing (`flipped: 0`); the draft of this note said "baseline along longitude", which
-would have needed a west-up frame and mirrored the left half.
+Placement is the notebook's `rotate(x−90) translate(y,0) rotate(x<180?0:180)`,
+`text-anchor: middle`, `dy 0.35em`, font-size 10: each label lies in the top plane
+(`LABEL_LIFT = 0.01` above the top face so it never fights the slab), centred on the
+mark point, baseline along the radius at mid-angle, em `10·S = 0.216` world units
+(3.35 px in the 400×250 reference — the notebook's proportion), `anchorX: center`
+(set on each `Text` after `hierarchyLabels` returns, then one more `sync()`),
+`anchorY: middle`, fill `#333`, outline 0.25 white, render order 1. The baseline
+reads outward on the right half (`x < 180°`) and inward on the left, as the
+notebook's turn does.
 
-Font Roboto Regular, fill `#333`, outline 0.25 white, anchorX `center` (set on each
-`Text` after `hierarchyLabels` returns, then one more `sync()`), anchorY middle,
-render order 1. **Em per label** = min of: 8 px at the harness's 250 px frame
-(`8 / pxPerUnit`); 0.7 × the cell's chord width *across* the baseline (its longitude
-chord at the mark point, `2R sin(colat) sin(Δlon/2)` — the glyphs must fit the cell's
-width); and the em at which the string's advance is 0.55 × the band's arc height
-*along* the baseline (`R·(colat1 − colat0)`, advance measured at em 1 in a probe
-layout). A label whose em would be under 2 px is dropped: 14 of the 93 candidates
-(deep slivers), 79 placed, em 2.10 … 8.00 px. `expected.labels = 79`; the marks dump
-carries `labels: [{ id, text, x, y, z, q, anchorX: 'center' }]`. Nothing overruns
-its cell any more.
+The notebook's left-half turn exists so that its text reads left-to-right; from
+the oblique camera the same intent is "the baseline projects rightward from camera
+A", and where the two rules disagree — labels near 12 and 6 o'clock, whose baseline
+is nearly vertical on screen — the page turns the baseline about the face normal
+(10 of 93 at the shipped camera, counted as `turned` in the console line). That
+keeps `labels.js`'s own mirror check idle (`flipped: 0`): that check turns a label
+about its *up* axis, which for an up-facing label would show its back, mirrored.
+No per-frame flip is wired in (the director adds it on merge).
 
 ## Camera
 
-Pole axis = scene up. `frameCamera` fov 40, elevation 35°, azimuth 150°, fill 0.85,
-fitted to the full geometry: the 8 world bounding-box corners of every cell mesh plus
-the 4 corners of every label (fit on the corners first, lay the labels out at that
-distance, refit with the label corners, resize the labels to the final distance and
-rebuild out any that fall under 2 px). The draft fitted the mark points, which lie
-on the outer face, and the deepest band ran off the bottom of the reference. Azimuth `a` puts camera A at longitude `90° − a`, so A
-looks at longitude 300° (where query, analytics, scale and data meet) and camera B
-(rotated +90° about up) at 210° (util, animate); both see the pole cap and several
-packages. The draft's azimuth 20° put camera A at longitude 70°, in the middle of
-`vis` (which spans 0°–163°), so the whole near side was one colour.
+`frameCamera` fov 40, elevation 50°, azimuth 25°, fill 0.85, fitted to every slab's
+world bounding-box corners plus every label's corners (fit on the slabs first, lay
+the labels out, refit with their corners). Azimuth 25° puts camera A on the `+z`
+side, so screen-up is roughly `−z` and the notebook's 12 o'clock is at the top of
+the frame; camera B (rotated +90° about up) is at the same elevation and sees the
+whole disc too (eligible 251 / 251).
 
-Gates as shipped: depth 0.804 · counts 0/0, 0/0, cells 251/251 · angle 0.302 /
-0.310 · picking 20/20 from both cameras (144 / 135 cells front-facing) · labels 79/79.
+Gates as shipped: depth ratio 0, pass by ruling · counts 0/0, 0/0, cells 251/251 ·
+angle 0.448 / 0.551 · picking 20/20 from both cameras (251 / 251 eligible) · labels
+93/93 · twice 0 px.
 
 ## Primitives for `src/`
 
-`src/shell.js`: `shellSector(lon0, lon1, colat0, colat1, r0, r1, segments, origin?)`
-→ `{ geometry, centroid, normal }`, a closed BufferGeometry in local coordinates
-around `origin` (default: the sector's centre at mid-radius); every face has its
-own vertices, wound outward (checked: signed volume > 0 for all 251). Also exports
-`spherical(r, colat, lon)`. Labels use `src/labels.js` as is (a probe layout at em 1
-measures each string; per-label `fontSize` is set afterwards). Nothing else new.
+None new. The slab is `THREE.ExtrudeGeometry` over a `THREE.Shape` of the arc
+outline (~40 lines in the page); labels use `src/labels.js` as is. `src/d33.js`
+gains `planar` (state, `register` option, depth-gate note, report field) and the
+harness copies `planar` into both JSON files.
 
 ## For three-rs
 
 d3 modules: d3-hierarchy (hierarchy, partition), d3-scale (scaleOrdinal),
 d3-interpolate/d3-scale-chromatic (interpolateRainbow, interpolateRgb, quantize).
-Layout: the band and thickness formulas above, ~20 lines on top of partition's
-`x0/x1/depth/value`; the shell-sector mesh is ~100 lines. Labels: 93 SDF-text
-strings, each a position, a quaternion (tangent frame, baseline along the meridian)
-and `anchorX: center`, all in `marks/d3_sunburst.json`, plus each label's em (the
-`fontSize` rule above).
+Geometry: the arc outline with d3's pad rule (above), extruded 0.3 along `+y`.
+Labels: 93 SDF-text strings, each a position, a quaternion (baseline along the
+radius, face `+y`) and `anchorX: center`, em 0.216, all in `marks/d3_sunburst.json`;
+`planar: true` in both JSON files says which class the example is in.

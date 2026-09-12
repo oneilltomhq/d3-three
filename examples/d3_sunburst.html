@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 	<head>
-		<title>d33 - sunburst as a sphere</title>
+		<title>d33 - sunburst</title>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<style>
@@ -11,7 +11,7 @@
 	</head>
 	<body>
 
-		<div id="info">d33 - d3 sunburst (flare-2.json) lifted to a sphere: angle is longitude, depth is a latitude band, value is thickness</div>
+		<div id="info">d33 - d3 sunburst (flare-2.json), the notebook's chart as a flat disc of thin slabs in the 3D world</div>
 
 		<script type="importmap">
 			{
@@ -34,24 +34,20 @@
 			import { register } from 'd33';
 			import { frameCamera } from '/src/frame.js';
 			import { attachOrbit } from '/src/orbit.js';
-			import { shellSector, spherical } from '/src/shell.js';
 			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
 
 			let renderer, scene, camera, labels;
 
-			const R = 10;                              // radius of the sphere every cell's outer face lies on
-			const EXTRUDE = - 1;                       // -1: thickness grows inward from R; +1: outward (see layouts/sunburst.md)
-			const H0 = 0.005, H1 = 0.15;               // thickness h = (H0 + H1 sqrt(value / root.value)) R: 0.05 .. 1.55
-			const THETA = 150 * Math.PI / 180;         // colatitude of the deepest ring's far edge
-			const BAND_PAD = 0.4 * Math.PI / 180;      // gap between depth bands (outerRadius - 1)
-			const LON_PER_SEGMENT = 3 * Math.PI / 180; // tessellation: one segment per 3 degrees, even count
-			const LAT_SEGMENTS = 4;
-			const MARK_SINK = 1e-4;                    // mark point sits this far inside the outer face
-			const LABEL_PX = 8;                        // label em height cap at the harness's 250 px frame
-			const LABEL_MIN_PX = 2;                    // labels that would be smaller are dropped
-			const LABEL_ACROSS = 0.7;                  // em <= this x the cell's chord width across the baseline
-			const LABEL_ALONG = 0.55;                  // string advance <= this x the band's arc height along the baseline
-			const LABEL_LIFT = 0.02;                   // label plane sits this far above the outer face
+			// The notebook's chart is 928 px across (radius 464); the disc is 20
+			// world units across, so one notebook px is S world units. Every
+			// number below that the notebook states in px is multiplied by S.
+			const RADIUS = 928 / 2;
+			const S = 20 / 928;
+			const THICKNESS = 0.015 * 20;   // slab thickness: 1.5 % of the diameter
+			const LABEL_PX = 10;            // the notebook's font-size
+			const LABEL_LIFT = 0.01;        // labels sit this far above the top face
+			const ARC_STEP = 2 * Math.PI / 180; // one outline segment per 2 degrees of arc
+			const UP = new THREE.Vector3( 0, 1, 0 );
 
 			await init();
 
@@ -81,17 +77,15 @@
 
 				const data = await fetch( '/gallery/hierarchies/sunburst.v2/files/flare-2.json' ).then( r => r.json() );
 
-				const radius = 928 / 2;
-
 				const color = d3.scaleOrdinal( d3.quantize( d3.interpolateRainbow, data.children.length + 1 ) );
 
 				const root = d3.partition()
-					.size( [ 2 * Math.PI, radius ] )
+					.size( [ 2 * Math.PI, RADIUS ] )
 					( d3.hierarchy( data )
 						.sum( d => d.value )
 						.sort( ( a, b ) => b.value - a.value ) );
 
-				const cells = sphereLayout( root );
+				const visible = root.descendants().filter( d => d.depth && d.x1 - d.x0 > 0.001 && d.y1 > d.y0 );
 
 				/* ---------------- scene ---------------- */
 
@@ -100,7 +94,7 @@
 
 				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.2 ) );
 
-				const sun = new THREE.DirectionalLight( 0xffffff, 1.8 );
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.6 );
 				sun.position.set( 1, 2, 1.5 ).normalize();
 				scene.add( sun );
 
@@ -114,20 +108,19 @@
 
 				const materials = new Map();
 				const marks = [];
-				const ids = new Map();       // node -> mark id (for labels)
-				const markPoint = new Map(); // node -> mark point
+				const ids = new Map();
+				const markPoint = new Map();
 
-				for ( const cell of cells ) {
+				for ( const node of visible ) {
 
-					let top = cell.node;
+					let top = node;
 					while ( top.depth > 1 ) top = top.parent;
 					const key = top.data.name;
 
 					if ( ! materials.has( key ) ) {
 
-						// the notebook's fill-opacity 0.6 over white, baked into an opaque
-						// colour: a transparent shell shows its own far side through the
-						// near side and the rings stop reading.
+						// the notebook's fill-opacity 0.6 over the white page, baked
+						// into an opaque colour so the slabs' edges stay clean
 						materials.set( key, new THREE.MeshStandardNodeMaterial( {
 							color: new THREE.Color( d3.interpolateRgb( color( key ), '#ffffff' )( 0.4 ) ),
 							roughness: 0.7, metalness: 0.0
@@ -135,46 +128,26 @@
 
 					}
 
-					// The mark point is the centre of the cell's outer face (a vertex of
-					// the outer patch, since the segment counts are even), a hair inside
-					// so a grazing pick ray enters this cell's own face first. The
-					// geometry is built around it, so getWorldPosition() is that point.
-					const { geometry, centroid, normal } = shellSector(
-						cell.lon0, cell.lon1, cell.colat0, cell.colat1, cell.r0, cell.r1,
-						{ lon: cell.lonSegments, lat: LAT_SEGMENTS },
-						spherical( cell.r1 - MARK_SINK, ( cell.colat0 + cell.colat1 ) / 2, ( cell.lon0 + cell.lon1 ) / 2 )
-					);
+					// The mark point is the centre of the slab's top face: mid-angle,
+					// mid-radius (the notebook's label point), at height THICKNESS.
+					const am = ( node.x0 + node.x1 ) / 2;
+					const rm = ( node.y0 + node.y1 ) / 2 * S;
+					const centre = new THREE.Vector3( rm * Math.sin( am ), THICKNESS, - rm * Math.cos( am ) );
 
-					const mesh = new THREE.Mesh( geometry, materials.get( key ) );
-					mesh.position.copy( centroid );
-					mesh.name = cell.node.data.name;
+					const mesh = new THREE.Mesh( sectorSlab( node, centre ), materials.get( key ) );
+					mesh.position.copy( centre );
+					mesh.name = node.data.name;
 					group.add( mesh );
 
-					ids.set( cell.node, 'c' + marks.length );
-					markPoint.set( cell.node, centroid );
-					marks.push( { id: 'c' + marks.length, kind: 'cell', object: mesh, normal } );
-
-				}
-
-				// a faint inner sphere so the hole at the south pole has something to
-				// look at; not a mark, not pickable. Only when cells grow outward:
-				// inward cells reach down to R - h_max and would cut through it.
-				if ( EXTRUDE > 0 ) {
-
-					const inner = new THREE.Mesh(
-						new THREE.SphereGeometry( 0.98 * R, 48, 32 ),
-						new THREE.MeshStandardNodeMaterial( { color: 0xdddddd, roughness: 0.9, metalness: 0.0 } )
-					);
-					inner.name = 'inner';
-					scene.add( inner );
+					ids.set( node, 'c' + marks.length );
+					markPoint.set( node, centre );
+					marks.push( { id: 'c' + marks.length, kind: 'cell', object: mesh, normal: [ 0, 1, 0 ] } );
 
 				}
 
 				/* ---------------- camera ----------------
-				   Fitted to the full geometry: the 8 corners of every cell's world
-				   bounding box (not the mark points, which lie on the outer face
-				   and would leave the walls and the deepest band outside the
-				   frame), plus, once they exist, the corners of every label. */
+				   Fitted to the whole disc (every slab's world bounding-box corners)
+				   plus, once they exist, every label's corners. */
 
 				const cellPoints = [];
 				const _c = new THREE.Vector3();
@@ -196,107 +169,67 @@
 				const box = new THREE.Box3();
 				for ( const p of cellPoints ) box.expandByPoint( p );
 
-				// Azimuth a puts camera A at longitude 90 - a; 150 looks at longitude
-				// 300, where query / analytics / scale / data meet, and camera B
-				// (rotated +90) at 210, over util and animate — both see several
-				// packages, not vis alone (which spans 0..163).
-				const frame = points => frameCamera( camera, box, { elevation: 35, azimuth: 150, fill: 0.85, points } );
-				const pxPerUnitAt = target => 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+				// Azimuth 25 puts camera A on the +z side, so screen-up is roughly
+				// -z: the notebook's 12 o'clock (angle 0) is at the top of the frame.
+				const frame = points => frameCamera( camera, box, { elevation: 50, azimuth: 25, fill: 0.85, points } );
 
 				let target = frame( cellPoints );
 
 				/* ---------------- labels (src/labels.js) ----------------
-				   Candidates: the notebook's subset, cells whose mid-radius arc
-				   length exceeds 10 px in its own units ((y0+y1)/2 * (x1-x0) > 10
-				   at radius 464), 93 cells. Each label lies tangent to the sphere
-				   just above the cell's outer face, centred on the mark point,
-				   baseline along the meridian (the notebook's radial text:
-				   rotate(x-90) translate(y,0)), text-anchor middle. Em height per
-				   label: at most LABEL_PX at the frame's 250 px, at most
-				   LABEL_ACROSS x the cell's chord width across the baseline (its
-				   longitude chord at the mark point, the glyphs must fit the
-				   cell's width), and the string's advance at most LABEL_ALONG x the
-				   band's arc height along the baseline. Labels whose em would be
-				   under LABEL_MIN_PX are dropped. Laid out (font awaited) before
-				   the animation loop exists. */
+				   Exactly the notebook's: cells with (y0+y1)/2 * (x1-x0) > 10 in its
+				   units; text-anchor middle, dy 0.35em (anchorY middle), 10 px
+				   (10 S world units); `rotate(x-90) translate(y,0) rotate(x<180?0:180)`
+				   = baseline along the radius at mid-angle and mid-radius, reading
+				   outward on the right half and inward on the left half. The label
+				   lies in the top plane, LABEL_LIFT above the top face. */
 
-				const candidates = root.descendants().filter( d => d.depth && ( d.y0 + d.y1 ) / 2 * ( d.x1 - d.x0 ) > 10 );
+				const labelled = root.descendants().filter( d => d.depth && ( d.y0 + d.y1 ) / 2 * ( d.x1 - d.x0 ) > 10 );
 
 				const labelPoint = new Map();
-				for ( const node of candidates ) labelPoint.set( node, markPoint.get( node ).clone().addScaledVector( markPoint.get( node ).clone().normalize(), MARK_SINK + LABEL_LIFT ) );
+				for ( const node of labelled ) labelPoint.set( node, markPoint.get( node ).clone().setY( THICKNESS + LABEL_LIFT ) );
 
-				const cellOf = new Map( cells.map( c => [ c.node, c ] ) );
+				let turned = 0;
 
-				const labelOptions = {
+				labels = await hierarchyLabels( { descendants: () => labelled }, ids, labelPoint, {
 					font: '/examples/fonts/Roboto-Regular.ttf',
-					fontSize: 1, // per-label em is set after layout (see below)
+					fontSize: LABEL_PX * S,
 					color: 0x333333,
 					outlineWidth: 0.25, outlineColor: 0xffffff,
 					leafOffset: 0, internalOffset: 0,
 					orient: node => {
 
-						// tangent plane, +z the outward normal, +x along the meridian:
-						// (south, west) or its 180-degree turn about the normal
-						// (north, east), whichever makes +x project rightward from
-						// camera A. That is the notebook's rotate(x < 180 ? 0 : 180),
-						// decided by the camera instead of the angle; the frame is
-						// always a rotation, never a reflection, so labels.js's own
-						// mirror check (which assumes +y projects upward) finds
-						// nothing to flip.
-						const p = markPoint.get( node );
-						const colat = Math.acos( p.y / p.length() );
-						const lon = Math.atan2( p.z, p.x );
-						const south = new THREE.Vector3( Math.cos( colat ) * Math.cos( lon ), - Math.sin( colat ), Math.cos( colat ) * Math.sin( lon ) );
-						const west = new THREE.Vector3( Math.sin( lon ), 0, - Math.cos( lon ) );
-						const right = p.clone().add( south ).project( camera ).x;
-						const left = p.clone().sub( south ).project( camera ).x;
-						if ( right < left ) { south.negate(); west.negate(); }
-						return basisQuaternion( south, west );
+						// baseline along the radius; +z (the face) is world up
+						const am = ( node.x0 + node.x1 ) / 2;
+						const radial = new THREE.Vector3( Math.sin( am ), 0, - Math.cos( am ) );
+						if ( am >= Math.PI ) radial.negate(); // the notebook's rotate(180) on the left half
+
+						// The notebook's left-half turn is what makes its text read
+						// left-to-right; from an oblique camera the same intent is
+						// "the baseline projects rightward". Where the two disagree
+						// (labels near 12 and 6 o'clock, whose baseline is nearly
+						// vertical on screen) the baseline is turned about the face
+						// normal, so labels.js's mirror check — which turns about the
+						// label's up axis and would show the back of an up-facing
+						// label — finds nothing to flip.
+						const p = labelPoint.get( node );
+						const right = p.clone().add( radial ).project( camera ).x;
+						const left = p.clone().sub( radial ).project( camera ).x;
+						if ( right < left ) { radial.negate(); turned ++; }
+
+						return basisQuaternion( radial, UP.clone().cross( radial ) );
 
 					},
 					camera,
 					billboard: false
-				};
+				} );
 
-				// measuring pass: every candidate at em 1, for the string advance in em
-				const probe = await hierarchyLabels( { descendants: () => candidates }, ids, labelPoint, labelOptions );
-				const advance = new Map( probe.labels.map( l => [ l.node, l.object.textRenderInfo.blockBounds[ 2 ] - l.object.textRenderInfo.blockBounds[ 0 ] ] ) );
+				// text-anchor: middle, as the notebook
+				for ( const l of labels.labels ) { l.object.anchorX = 'center'; l.anchorX = 'center'; }
+				labels.batched.sync();
+				scene.add( labels.group );
 
-				const emFor = ( node, pxPerUnit ) => {
-
-					const c = cellOf.get( node );
-					const across = 2 * R * Math.sin( ( c.colat0 + c.colat1 ) / 2 ) * Math.sin( ( c.lon1 - c.lon0 ) / 2 );
-					const along = R * ( c.colat1 - c.colat0 );
-					return Math.min( LABEL_PX / pxPerUnit, LABEL_ACROSS * across, LABEL_ALONG * along / advance.get( node ) );
-
-				};
-
-				const buildLabels = async ( pxPerUnit ) => {
-
-					const placed = candidates.filter( node => emFor( node, pxPerUnit ) * pxPerUnit >= LABEL_MIN_PX );
-					const built = await hierarchyLabels( { descendants: () => placed }, ids, labelPoint, labelOptions );
-
-					// per-label em and text-anchor: middle, as the notebook
-					for ( const l of built.labels ) {
-
-						l.object.fontSize = emFor( l.node, pxPerUnit );
-						l.object.anchorX = 'center';
-						l.anchorX = 'center';
-
-					}
-
-					built.batched.sync();
-					return built;
-
-				};
-
-				let pxPerUnit = pxPerUnitAt( target );
-				labels = await buildLabels( pxPerUnit );
-
-				// refit with the label corners in the frame, then size the labels
-				// to that (slightly farther) camera; a label that drops under the
-				// minimum at the final distance is rebuilt out.
-				const labelCorners = built => built.labels.flatMap( l => {
+				// refit with the label corners in the frame
+				const labelCorners = labels.labels.flatMap( l => {
 
 					const bb = l.object.textRenderInfo.blockBounds;
 					l.object.updateMatrixWorld( true );
@@ -305,13 +238,9 @@
 
 				} );
 
-				target = frame( cellPoints.concat( labelCorners( labels ) ) );
-				pxPerUnit = pxPerUnitAt( target );
-				labels = await buildLabels( pxPerUnit );
+				target = frame( cellPoints.concat( labelCorners ) );
 
-				scene.add( labels.group );
-
-				const emPx = labels.labels.map( l => l.object.fontSize * pxPerUnit );
+				/* ---------------- renderer ---------------- */
 
 				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
 				renderer.setPixelRatio( window.devicePixelRatio );
@@ -321,58 +250,84 @@
 
 				await renderer.init();
 
+				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+
 				console.log( 'd33 backend:', renderer.backend.constructor.name,
-					'cells:', cells.length, 'height:', root.height, 'R:', R,
-					'labels:', labels.count, '/', candidates.length, 'flipped:', labels.flipped,
-					'px min:', Math.min( ...emPx ).toFixed( 2 ), 'max:', Math.max( ...emPx ).toFixed( 2 ) );
+					'cells:', marks.length, 'labels:', labels.count, 'turned:', turned, 'flipped:', labels.flipped,
+					'em px at 400x250:', ( LABEL_PX * S * pxPerUnit ).toFixed( 2 ) );
 
 				attachOrbit( camera, renderer.domElement, target );
 
 				register( {
 					renderer, scene, camera, marks, target,
-					expected: { nodes: 0, links: 0, cells: root.descendants().filter( d => d.depth ).length, labels: labels.count },
+					expected: { nodes: 0, links: 0, cells: visible.length, labels: labelled.length },
 					pickables: group.children,
-					labels
+					labels,
+					planar: true
 				} );
 
 			}
 
-			/* ---------------- the sphere (layouts/sunburst.md) ----------------
-			   d3.partition decides every cell's longitude span (x0, x1, padded as
-			   the notebook's d3.arc pads it), its depth and its value. The sphere
-			   adds: a colatitude band per depth, from the north pole (root) down
-			   to THETA, and a radial thickness that grows with the square root of
-			   the cell's share of the total value. */
+			/* ---------------- the slab ----------------
+			   The notebook's arc: inner radius y0, outer radius y1 - 1, pad angle
+			   min((x1-x0)/2, 0.005) at pad radius 464/2, applied as d3.arc applies
+			   it (a linear pad, so the angular pad is asin(rp / r * sin(pa / 2)) at
+			   each radius, and an edge collapses to its mid-angle when the pad
+			   would exceed the span). Angle 0 is 12 o'clock, clockwise seen from
+			   above: notebook (x, y) = (r sin a, -r cos a) becomes world (x, z).
+			   The outline is extruded THICKNESS along +y and built in local
+			   coordinates around `centre`, so the mesh's world position is the
+			   top-face centre. */
 
-			function sphereLayout( root ) {
+			function sectorSlab( d, centre ) {
 
-				const H = root.height;
-				const cells = [];
+				const r0 = d.y0 * S;
+				const r1 = ( d.y1 - 1 ) * S;
+				const ap = padAngleOf( d ) / 2;
+				const rp = RADIUS / 2 * S;
 
-				for ( const node of root.descendants() ) {
+				let a00 = d.x0, a10 = d.x1, a01 = d.x0, a11 = d.x1;
 
-					if ( node.depth === 0 ) continue;
+				if ( ap > 1e-12 ) {
 
-					// the notebook's padAngle, split half on each side as d3.arc does
-					const pad = Math.min( ( node.x1 - node.x0 ) / 2, 0.005 );
-					const lon0 = node.x0 + pad / 2;
-					const lon1 = node.x1 - pad / 2;
-
-					const colat0 = THETA * ( node.depth - 1 ) / H;
-					const colat1 = THETA * node.depth / H - BAND_PAD;
-
-					const h = H0 * R + H1 * R * Math.sqrt( node.value / root.value );
-
-					cells.push( {
-						node, lon0, lon1, colat0, colat1,
-						r0: EXTRUDE > 0 ? R : R - h,
-						r1: EXTRUDE > 0 ? R + h : R,
-						lonSegments: 2 * Math.max( 1, Math.ceil( ( lon1 - lon0 ) / LON_PER_SEGMENT / 2 ) )
-					} );
+					const p0 = Math.asin( rp / r0 * Math.sin( ap ) );
+					const p1 = Math.asin( rp / r1 * Math.sin( ap ) );
+					if ( a10 - a00 - 2 * p0 > 1e-12 ) { a00 += p0; a10 -= p0; } else a00 = a10 = ( d.x0 + d.x1 ) / 2;
+					if ( a11 - a01 - 2 * p1 > 1e-12 ) { a01 += p1; a11 -= p1; } else a01 = a11 = ( d.x0 + d.x1 ) / 2;
 
 				}
 
-				return cells;
+				// outline in the shape's (u, v) = world (x, -z): outer arc forward, inner arc back
+				const pts = [];
+				const arcPoints = ( r, a, b ) => {
+
+					const n = Math.max( 1, Math.ceil( Math.abs( b - a ) / ARC_STEP ) );
+					for ( let i = 0; i <= n; i ++ ) {
+
+						const t = a + ( b - a ) * i / n;
+						pts.push( new THREE.Vector2( r * Math.sin( t ), r * Math.cos( t ) ) );
+
+					}
+
+				};
+
+				arcPoints( r1, a01, a11 );
+				arcPoints( r0, a10, a00 );
+
+				const geometry = new THREE.ExtrudeGeometry( new THREE.Shape( pts ), { depth: THICKNESS, bevelEnabled: false } );
+
+				// (u, v, w) -> (u, w, -v): extrusion along +y, shape v -> world -z; then local coordinates around the top-face centre
+				geometry.rotateX( - Math.PI / 2 );
+				geometry.translate( - centre.x, - centre.y, - centre.z );
+				geometry.computeVertexNormals();
+
+				return geometry;
+
+			}
+
+			function padAngleOf( d ) {
+
+				return Math.min( ( d.x1 - d.x0 ) / 2, 0.005 );
 
 			}
 
