@@ -54,6 +54,12 @@ const thenCells = ( process.env.REF_THEN || '' ).split( ',' ).map( s => s.trim()
 // evaluated in the page with `d3` in scope, e.g.
 //   REF_EXPRS='{"tile":"d3.treemapBinary"}' node tools/ref.js hierarchies/treemap.v2
 const extraExprs = JSON.parse( process.env.REF_EXPRS || '{}' );
+// A notebook whose `d3` cell is `require("d3@7", "d3-sankey@0.12")` gets one
+// merged namespace from Observable. REF_MERGE lists served ESM modules
+// (comma-separated paths under this repo) whose exports are merged onto
+// window.d3 before the cells run, e.g.
+//   REF_MERGE=/examples/jsm/vendor/d3-sankey.js node tools/ref.js networks/sankey.v2
+const mergeModules = ( process.env.REF_MERGE || '' ).split( ',' ).map( s => s.trim() ).filter( Boolean );
 
 /* The notebook's cell wiring: cell name -> { deps, fn } */
 
@@ -120,11 +126,12 @@ await page.setContent( `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 </style></head><body><div id="chart"></div></body></html>` );
 
 // the bundle is an ES module, so re-export it onto window
-await page.evaluate( async url => {
+await page.evaluate( async ( url, merge ) => {
 
-	window.d3 = await import( url );
+	window.d3 = { ...await import( url ) };
+	for ( const m of merge ) Object.assign( window.d3, await import( m ) );
 
-}, `http://localhost:${ port }/examples/jsm/vendor/d3.js` );
+}, `http://localhost:${ port }/examples/jsm/vendor/d3.js`, mergeModules.map( m => `http://localhost:${ port }${ m }` ) );
 
 const size = await page.evaluate( async ( script, cells, filesBase, extraValues, svgSize, thenCells, extra ) => {
 
