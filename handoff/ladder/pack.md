@@ -43,10 +43,11 @@ radii — reproduce the shells by porting the packer and check its centres again
 `marks/`.
 
 **Picking:** `pickables` = the 220 leaf meshes only; the shells are containers.
-In a solid packing most leaf centres are hidden behind other leaves (37 of 220 are
-unoccluded from both gate cameras), so the gate distinguishes "occluded by a nearer
-pickable" from a miss (nothing, a non-pickable, or a hit behind the claimed
-centre). Shipped result: 20 sampled, hit 5 / 3, occluded 15 / 17, misses 0.
+In a solid packing most leaf centres are hidden behind other leaves (76 / 83 of
+220 are unoccluded from cameras A / B), so the gate runs a visibility pre-pass —
+a candidate whose centre is intercepted by a nearer pickable is not sampled — and
+then requires every sampled mark to hit. Shipped result: 20 / 20 hit from both
+cameras, 34 distinct, 0 misses.
 
 **Camera:** PerspectiveCamera fov 40, elevation 20°, azimuth 40°, fitted to 288
 points on the root sphere's surface at 0.85 fill. Fixed; one frame.
@@ -59,8 +60,9 @@ not billboarded; each label centred on its leaf and pushed `1.02·r` toward the
 viewer, so leaves in front hide it like the notebook's clip-path. 0 flipped.
 
 **Gates:** depth 0.676 · counts 252/252, 0/0 · angle 0.174 / 0.182 · picking
-20 sampled, 0 misses (5 / 3 hit, 15 / 17 occluded by a nearer leaf) from the two
-cameras · labels 252/252. `e2e:twice` = 0 differing pixels.
+20 / 20 hit from each camera (visible 76 / 83 of 220 candidates, 34 distinct
+sampled, 0 misses) · labels 252/252. `e2e:twice` = 0 differing pixels. Harness
+time 3.2–5.2 s, like every other example.
 
 **Gap:** the packing density is greedy-grade (root 0.42, deepest median 0.30; the
 best-known equal-sphere packings reach ~0.6), and 4.33 px labels are only legible

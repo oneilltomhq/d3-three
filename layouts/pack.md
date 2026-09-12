@@ -88,12 +88,11 @@ packings of that many equal spheres in a sphere reach roughly 0.6. Time: `padded
   `getWorldPosition` gives the gate its world centre.
 - pickables = leaf meshes only. Internal spheres are containers and the notebook's
   interactive targets are the leaves. Measured: 76 of 220 leaf centres are
-  unoccluded by *other leaves* from camera A, 83 from camera B, 37 from both — the
-  rest are inside the ball, which is what a 3D packing is. The gate therefore
-  distinguishes "occluded by a nearer pickable" (fine: that pixel belongs to the
-  front leaf) from a miss (nothing, a non-pickable, or a hit behind the claimed
-  centre). Result: 20 sampled, hit 5 / 3, occluded 15 / 17, misses 0 — no sampled
-  leaf is ever blocked by a container.
+  unoccluded by *other leaves* from camera A, 83 from camera B — the rest are
+  inside the ball, which is what a 3D packing is. The gate's visibility pre-pass
+  drops those before sampling (`visibleA 76`, `visibleB 83`) and every sampled
+  leaf must then hit: 20 / 20 from both cameras, 34 distinct, 0 misses — no
+  visible leaf is ever blocked by a container.
 - `expected = { nodes: 252, links: 0 }`.
 - labels (rung 3, `src/labels.js` `hierarchyLabels`, lib3 sdf-text, one Text per
   node in a BatchedText): the rung 3 gate wants one member per node (252/252), so
@@ -129,13 +128,15 @@ two siblings overlap (distance ≥ r_i + r_j − 1e-9), every child inside its p
 enclosing sphere tight, 252 nodes well under a second, plus synthetic hierarchies
 (12², a 100-way fan-out past the nearest-32 cap, 3⁴) and edge cases.
 
-`src/d33.js` (gate change for this rung, re-applied on top of rung0's per-camera
-sampling after `git merge rung0`): picking samples are drawn from the pickable node
-marks (`sampleSet: 'pickables'`, falling back to all node marks when no pickable is
-a node mark), and a sample whose ray is intercepted by a *nearer pickable* counts as
-occluded, not missed; the gate passes when there are no misses and each camera hits
-at least one sample. `gates/*.json` records `sampled`, `sampleSet`, `candidates`,
-`occludedA/B`. Cluster, tree and bundling are unaffected (0 occlusions, 20/20 hits).
+`src/d33.js` (gate change for this rung, on top of rung0's per-camera sampling):
+picking samples are drawn from the pickable node marks (`sampleSet: 'pickables'`,
+falling back to all node marks when no pickable is a node mark), and a visibility
+pre-pass raycast discards, per camera, every candidate whose centre is intercepted
+by a *nearer pickable*; up to 20 of the visible ones are sampled in rung0's stride
+order and all must hit (pass iff `hitA === sampledA && hitB === sampledB`, zero
+visible fails). `gates/*.json` adds `sampleSet`, `candidates`, `visibleA/B`.
+Cluster, tree, force and bundling sample exactly the marks they did before
+(sampled 20 / 20 / 20 / 38, hit 20 / 20).
 
 ## For three-rs
 

@@ -32,15 +32,15 @@
 			"pass": true
 		},
 		"picking": {
-			"sampled": 20,
+			"sampled": 34,
 			"sampledA": 20,
 			"sampledB": 20,
 			"sampleSet": "pickables",
 			"candidates": 220,
-			"hitA": 5,
-			"hitB": 3,
-			"occludedA": 15,
-			"occludedB": 17,
+			"visibleA": 76,
+			"visibleB": 83,
+			"hitA": 20,
+			"hitB": 20,
 			"pickables": 220,
 			"misses": [],
 			"pass": true
