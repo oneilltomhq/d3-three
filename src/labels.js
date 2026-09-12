@@ -16,8 +16,11 @@
 // This is the notebook's `text-anchor: x < π ? start : end`. The check runs
 // once at layout time against camera A (that state is what the reference
 // screenshot and the marks dump record) and again every frame in
-// `update(camera)`, so orbiting behind a label's plane re-flips it in place:
-// the plane never moves, only the reading direction (rung 3, per-frame flip).
+// `update(camera)`, where it is a two-axis test — reads left-to-right AND
+// upright — choosing one of four 180° turns (none, about up, about the
+// normal, about the baseline) so a label lying flat (tree of life) or seen
+// from behind is re-turned in place: the plane never moves, only which way
+// the text is read in it (rung 3, per-frame flip).
 //
 // Deterministic: opentype layout is pure arithmetic; the atlas is rasterised
 // by Chromium's software Skia (Path2D fill + EDT). Two-run identity in the
@@ -87,6 +90,9 @@ const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
 const _p = new THREE.Vector3();
 const _flip = new THREE.Quaternion();
+const _rx = new THREE.Quaternion();
+const _ry = new THREE.Quaternion();
+const _rz = new THREE.Quaternion();
 
 /** Quaternion whose local +x is `along` (unit) and local +y is `up` (unit). */
 export function basisQuaternion( along, up, target = new THREE.Quaternion() ) {
@@ -124,11 +130,11 @@ export function basisQuaternion( along, up, target = new THREE.Quaternion() ) {
  * @returns {Promise<{ group: THREE.Group, batched: BatchedText, labels: object[],
  *           count: number, flipped: number, update: (camera) => number }>}
  *          `labels[i]` = { id, node, text, object, anchorX: 'start' | 'end', flipped,
- *          anchor, q0, flipped0, state, flipQ, flipOffset } — `anchor`/`q0` are the
- *          anchor point and orient() quaternion the mirror check is made against,
- *          `flipped0` the layout-time verdict, `state` (0/1) whether the label is
- *          currently turned relative to how it was laid out, `flipQ`/`flipOffset`
- *          the quaternion and world translation that turn it (see `update`).
+ *          anchor, q0, flipped0, state, poses } — `anchor`/`q0` are the anchor
+ *          point and orient() quaternion the mirror check is made against,
+ *          `flipped0` the layout-time verdict, `state` (0..3) which of the four
+ *          `poses` ({ q, p }: none / about up / about the baseline / in-plane,
+ *          relative to how it was laid out) the label is in (see `update`).
  */
 export async function hierarchyLabels( root, ids, positions, {
 	font,
@@ -238,7 +244,7 @@ export async function hierarchyLabels( root, ids, positions, {
 			id: ids.get( node ), node, text: strings[ i ], object: label, anchorX, flipped: wasFlipped,
 			// per-frame flip state (filled in after sync(), when the block width is known)
 			anchor: label.position.clone(), q0, flipped0: wasFlipped, state: 0,
-			baseQ: label.quaternion.clone(), flipQ: null, flipOffset: null
+			baseQ: label.quaternion.clone(), poses: null
 		} );
 
 	}
@@ -255,24 +261,42 @@ export async function hierarchyLabels( root, ids, positions, {
 
 	}
 
-	// Per-frame flip data. Turning a laid-out label 180° about its own up axis
-	// through its anchor would put the text block on the other side of the
-	// node; the layout-time flip compensates by swapping the anchor (a
-	// re-layout). The per-frame flip must not re-lay anything out, so it keeps
-	// lib3's anchor and instead moves the origin to the block's other end:
-	// block local x-extent [x0, x1] (blockBounds) turned about the origin
-	// becomes [-x1, -x0]; translating by (x0 + x1) along the laid-out +x puts
-	// it back on [x0, x1]. Same pixels as an anchor swap, one matrix write.
+	// Per-frame flip poses. Turning a laid-out label 180° about an axis
+	// through its origin moves the text block (about up: to the other side of
+	// the node; about the baseline: below it; in-plane: both). The layout-time
+	// flip compensates by swapping the anchor (a re-layout); the per-frame
+	// turns must not re-lay anything out, so they keep lib3's anchor and move
+	// the origin instead: the block's local extent [x0, x1] × [y0, y1]
+	// (blockBounds) turned about the origin becomes [-x1, -x0] × [-y1, -y0],
+	// and translating by (x0 + x1) along the laid-out +x and/or (y0 + y1)
+	// along +y puts it back where it was. Same pixels, one matrix write.
+	//   poses[0] none        q = base           p = anchor
+	//   poses[1] about up    q = base·R_y(180°) p = anchor + (x0+x1)·X
+	//   poses[2] about x     q = base·R_x(180°) p = anchor + (y0+y1)·Y
+	//   poses[3] in-plane    q = base·R_z(180°) p = anchor + (x0+x1)·X + (y0+y1)·Y
+	// index = (reads backwards ? 1 : 0) + (upside down ? 2 : 0).
 	if ( ! billboard ) {
 
-		_flip.setFromAxisAngle( _y.set( 0, 1, 0 ), Math.PI );
+		const turns = [ null, _ry, _rx, _rz ];
+		_ry.setFromAxisAngle( _y.set( 0, 1, 0 ), Math.PI );
+		_rx.setFromAxisAngle( _x.set( 1, 0, 0 ), Math.PI );
+		_rz.setFromAxisAngle( _z.set( 0, 0, 1 ), Math.PI );
 
 		for ( const l of labels ) {
 
 			const bb = l.object.textRenderInfo.blockBounds;
-			_x.set( 1, 0, 0 ).applyQuaternion( l.baseQ );
-			l.flipOffset = _x.multiplyScalar( bb[ 0 ] + bb[ 2 ] ).clone();
-			l.flipQ = l.baseQ.clone().multiply( _flip );
+			const dx = _x.set( 1, 0, 0 ).applyQuaternion( l.baseQ ).multiplyScalar( bb[ 0 ] + bb[ 2 ] ).clone();
+			const dy = _y.set( 0, 1, 0 ).applyQuaternion( l.baseQ ).multiplyScalar( bb[ 1 ] + bb[ 3 ] ).clone();
+
+			l.poses = turns.map( ( turn, k ) => {
+
+				const q = turn ? l.baseQ.clone().multiply( turn ) : l.baseQ.clone();
+				const p = l.anchor.clone();
+				if ( k & 1 ) p.add( dx );
+				if ( k & 2 ) p.add( dy );
+				return { q, p };
+
+			} );
 
 		}
 
@@ -282,11 +306,15 @@ export async function hierarchyLabels( root, ids, positions, {
 		group, batched, labels, count: labels.length, flipped, billboard,
 
 		// Call once per frame, before render. Billboard mode: face every label
-		// at `cam`. Planar mode: keep every label's plane, but re-run the mirror
-		// check against `cam` and turn (or turn back) the labels whose reading
-		// direction changed, so text never reads backwards from behind its
-		// plane. Unchanged labels cost the check only; touched ones get one
-		// setMatrixAt. Returns the number of labels touched.
+		// at `cam`. Planar mode: keep every label's plane, but re-run the
+		// two-axis test against `cam` — local +x projects right of −x (reads
+		// left-to-right) and local +y projects above −y (upright) — and put
+		// each label in the one of its four poses for which both hold, so text
+		// never reads backwards or upside down from any side of its plane.
+		// Near edge-on (either projected axis shorter than EDGE_NDC) the label
+		// keeps its state, so nothing flickers at the edge. Unchanged labels
+		// cost the two projections only; touched ones get one setMatrixAt.
+		// Returns the number of labels touched.
 		update( cam ) {
 
 			cam.updateMatrixWorld(); // project() below reads matrixWorldInverse
@@ -304,27 +332,25 @@ export async function hierarchyLabels( root, ids, positions, {
 
 				} else {
 
-					// Same test, same inputs as at layout time (orient() frame at
-					// the anchor), so under camera A this agrees with `flipped0`
-					// bit for bit and nothing moves on the first frame.
-					const state = mirrored( l.anchor, l.q0, cam ) !== l.flipped0 ? 1 : 0;
+					// Mirror test: same inputs as at layout time (orient() frame at
+					// the anchor), so under camera A it agrees with `flipped0` bit
+					// for bit. Upright test on the same frame (a turn about up does
+					// not change +y).
+					const dx = projectedExtent( l.anchor, l.q0, cam, _x.set( 1, 0, 0 ), 'x' );
+					const dy = projectedExtent( l.anchor, l.q0, cam, _y.set( 0, 1, 0 ), 'y' );
+					if ( Math.abs( dx ) <= EDGE_NDC || Math.abs( dy ) <= EDGE_NDC ) continue;
+
+					const state = ( ( dx < 0 ) !== l.flipped0 ? 1 : 0 ) + ( dy < 0 ? 2 : 0 );
 					if ( state === l.state ) continue;
 
+					const turnX = ( state & 1 ) !== ( l.state & 1 ); // reading direction changes
 					l.state = state;
-					l.flipped = l.flipped0 !== ( state === 1 );
-					l.anchorX = ( l.anchorX === 'start' ) ? 'end' : 'start';
+					l.flipped = l.flipped0 !== ( ( state & 1 ) === 1 );
+					if ( turnX ) l.anchorX = ( l.anchorX === 'start' ) ? 'end' : 'start';
 
-					if ( state ) {
-
-						object.quaternion.copy( l.flipQ );
-						object.position.copy( l.anchor ).add( l.flipOffset );
-
-					} else {
-
-						object.quaternion.copy( l.baseQ );
-						object.position.copy( l.anchor );
-
-					}
+					const pose = l.poses[ state ];
+					object.quaternion.copy( pose.q );
+					object.position.copy( pose.p );
 
 				}
 
@@ -369,11 +395,25 @@ export async function hierarchyLabels( root, ids, positions, {
 // off-axis under a perspective camera are judged where they actually appear.)
 function mirrored( position, quaternion, camera ) {
 
-	_x.set( 1, 0, 0 ).applyQuaternion( quaternion );
-
-	const right = _p.copy( position ).add( _x ).project( camera ).x;
-	const left = _p.copy( position ).sub( _x ).project( camera ).x;
-
-	return right < left;
+	return projectedExtent( position, quaternion, camera, _x.set( 1, 0, 0 ), 'x' ) < 0;
 
 }
+
+// Signed NDC extent of the local `axis` (unit, in the frame's own space) at
+// `position`: screen `component` of (position + axis) minus that of
+// (position − axis). Negative = the axis points the wrong way on screen.
+// `axis` is overwritten with its world direction.
+function projectedExtent( position, quaternion, camera, axis, component ) {
+
+	axis.applyQuaternion( quaternion );
+
+	const plus = _p.copy( position ).add( axis ).project( camera )[ component ];
+	const minus = _p.copy( position ).sub( axis ).project( camera )[ component ];
+
+	return plus - minus;
+
+}
+
+// Hysteresis for the per-frame turns: below this projected half-extent (NDC)
+// a label is edge-on and keeps its state rather than flickering.
+const EDGE_NDC = 1e-3;

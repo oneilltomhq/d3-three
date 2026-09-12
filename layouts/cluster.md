@@ -91,12 +91,20 @@ counterpart of the notebook's `paint-order: stroke`).
   reads left-to-right — the notebook's `text-anchor: x < π ? start : end`.
   **140 of 252** labels are flipped on this page at azimuth 35°.
 - **Per frame:** orientation plane fixed; reading direction flips per frame to
-  face the camera. `labels.update(camera)` runs before every render and
-  re-runs the same mirror test against the live camera; a label whose verdict
-  changed is turned 180° about its own up axis in place (the text block stays
-  on the same side of the node, no re-layout: the Text's origin moves to the
-  block's other end instead of swapping the anchor). Under camera A the
-  verdict equals the layout-time one, so the reference frame is untouched.
+  face the camera. `labels.update(camera)` runs before every render and makes
+  a two-axis test against the live camera on the orient() frame: does local
+  +x project right of −x (reads left-to-right, the mirror test above) and does
+  local +y project above −y (upright)? Each label has four precomputed poses —
+  as laid out, turned 180° about its up axis, about its baseline, or in-plane
+  about its normal — and takes the one for which both hold; a turn never
+  re-lays out: the Text's origin moves to the block's other end
+  (`(x0+x1)·X` and/or `(y0+y1)·Y` from `blockBounds`) instead of swapping the
+  anchor, so the text block stays where it was. Near edge-on (either projected
+  axis under 1e-3 NDC) the label keeps its pose, so nothing flickers. Here and
+  on every vertical-plane page the upright test always holds and under
+  camera A the mirror verdict equals the layout-time one, so the reference
+  frame is untouched; on the flat-lying tree of life it turns 26 labels about
+  their baseline at camera A.
 - `billboard: true` is implemented in `hierarchyLabels` (camera quaternion
   copied into every label each frame) and **off** here.
 - Labels are not marks and are not pickable; the batch renders after nodes and

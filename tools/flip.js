@@ -9,12 +9,15 @@
 // (free-running RAF, real clocks), reads `window.d33dev = { camera, controls,
 // labels }`, checks that no label is turned at camera A, orbits the camera by
 // `--azimuth` degrees about the target's vertical axis, calls
-// `labels.update( camera )` and counts the labels whose state changed. It then
+// `labels.update( camera )` and counts the labels whose pose changed (none /
+// about up / about the baseline / in-plane: the two-axis reads-left-to-right
+// and upright test in src/labels.js). It then
 // renders one frame at the given size (at viewScale 2, box-filtered down like
 // the harness eyeballs) and writes
 // `handoff/rung3/eyeball/<file>-flipped-<W>x<H>.png` for the director.
 //
-// Exit 0 when at least one label flipped and a second update() touches none.
+// Exit 0 when update() at camera A touches nothing, the orbit turns at least
+// one label, and a second update() touches none.
 
 import puppeteer from 'puppeteer';
 import * as fs from 'fs/promises';
@@ -55,6 +58,7 @@ if ( ! size || ! Number.isFinite( azimuth ) ) {
 const width = parseInt( size[ 1 ], 10 );
 const height = parseInt( size[ 2 ], 10 );
 const viewScale = 2;
+const POSE = { 0: 'none', 1: 'aboutUp', 2: 'aboutBaseline', 3: 'inPlane' }; // labels.js poses[] index
 
 // Same Chromium flags as tools/stable.js (WebGPU on SwiftShader, no lavapipe).
 const flags = [
@@ -140,7 +144,8 @@ try {
 	// 1. camera A, loop stopped: update() must touch nothing, no label turned
 	const atA = await step( `( camera, controls, labels ) => ( {
 		count: labels.count,
-		turnedBefore: labels.labels.filter( l => l.state === 1 ).length,
+		turnedBefore: labels.labels.filter( l => l.state !== 0 ).length,
+		statesBefore: labels.labels.reduce( ( h, l ) => ( h[ l.state ] = ( h[ l.state ] || 0 ) + 1, h ), {} ),
 		touchedAtA: labels.update( camera )
 	} )` );
 
@@ -153,10 +158,11 @@ try {
 		controls.update(); // lookAt(target), as OrbitControls does after a drag
 
 		const touched = ${ noUpdate } ? - 1 : labels.update( camera );
-		const turnedAfter = labels.labels.filter( l => l.state === 1 ).length;
+		const turnedAfter = labels.labels.filter( l => l.state !== 0 ).length;
+		const statesAfter = labels.labels.reduce( ( h, l ) => ( h[ l.state ] = ( h[ l.state ] || 0 ) + 1, h ), {} );
 		const touchedAgain = ${ noUpdate } ? - 1 : labels.update( camera ); // same camera: idempotent
 
-		return { touched, turnedAfter, touchedAgain, flippedNow: labels.labels.filter( l => l.flipped ).length };
+		return { touched, turnedAfter, statesAfter, touchedAgain, flippedNow: labels.labels.filter( l => l.flipped ).length };
 
 	}` );
 
@@ -172,11 +178,15 @@ try {
 	await fs.writeFile( out, PNG.sync.write( outPng ) );
 
 	console.log( `[${ file }] injected=${ result.injected } labels=${ result.count }` );
-	console.log( `[${ file }] at camera A: turned=${ result.turnedBefore } update() touched=${ result.touchedAtA }` );
-	console.log( `[${ file }] after azimuth +${ azimuth }°: update() touched=${ result.touched } turned=${ result.turnedAfter }/${ result.count } (flipped relative to orient(): ${ result.flippedNow }); second update() touched=${ result.touchedAgain }` );
+	const hist = h => Object.entries( h ).map( ( [ k, v ] ) => `${ POSE[ k ] }=${ v }` ).join( ' ' );
+	console.log( `[${ file }] at camera A (after the page's own first frame): turned=${ result.turnedBefore }/${ result.count } [${ hist( result.statesBefore ) }] update() touched=${ result.touchedAtA }` );
+	console.log( `[${ file }] after azimuth +${ azimuth }°: update() touched=${ result.touched } turned=${ result.turnedAfter }/${ result.count } [${ hist( result.statesAfter ) }] (reading direction flipped relative to orient(): ${ result.flippedNow }); second update() touched=${ result.touchedAgain }` );
 	console.log( `[${ file }] eyeball written: ${ out } (${ image.width }x${ image.height })` );
 
-	ok = ! result.injected && result.turnedBefore === 0 && result.touchedAtA === 0 && result.touched > 0 && result.touchedAgain === 0;
+	// camera A is settled by the page's own first frame (the harness frame), so
+	// a further update() there must touch nothing; the orbit must turn labels;
+	// a repeated update() must be idempotent.
+	ok = ! result.injected && result.touchedAtA === 0 && result.touched > 0 && result.touchedAgain === 0;
 
 } finally {
 

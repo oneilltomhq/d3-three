@@ -349,7 +349,8 @@
 					'labels:', labels.count, 'flipped:', labels.flipped, 'x>=180:', leaves.filter( l => l.x >= 180 ).length,
 					'nodes:', root.descendants().length, 'links:', root.links().length, 'extensions:', leaves.length );
 
-				attachOrbit( camera, renderer.domElement, target );
+				const controls = attachOrbit( camera, renderer.domElement, target );
+				window.d33dev = { camera, controls, labels };
 
 				register( {
 					renderer, scene, camera, marks, target,
@@ -362,7 +363,7 @@
 
 			function animate() {
 
-				labels.update( camera ); // no-op unless billboard: true
+				labels.update( camera ); // per-frame mirror flip (plane fixed); billboard if enabled
 				renderer.render( scene, camera );
 
 			}

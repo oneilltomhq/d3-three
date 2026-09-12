@@ -13,22 +13,24 @@
 		"counts": {
 			"nodes": 381,
 			"links": 380,
+			"cells": 0,
 			"extensions": 191,
 			"expectedNodes": 381,
 			"expectedLinks": 380,
+			"expectedCells": 0,
 			"expectedExtensions": 191,
 			"pass": true
 		},
 		"angle": {
 			"a": {
-				"width": 0.5086058526464263,
+				"width": 0.5160439603375245,
 				"height": 0.5123575525286651,
-				"area": 0.2605880498636779
+				"area": 0.2643990205157336
 			},
 			"b": {
-				"width": 0.506987101813778,
-				"height": 0.4975155433688835,
-				"area": 0.25223396343989724
+				"width": 0.5156800611421057,
+				"height": 0.5122878288769761,
+				"area": 0.26417661891763566
 			},
 			"threshold": 0.01,
 			"pass": true
@@ -37,6 +39,12 @@
 			"sampled": 20,
 			"sampledA": 20,
 			"sampledB": 20,
+			"sampleSet": "pickables",
+			"candidates": 381,
+			"eligibleA": 381,
+			"eligibleB": 381,
+			"visibleA": 368,
+			"visibleB": 369,
 			"hitA": 20,
 			"hitB": 20,
 			"pickables": 381,
@@ -52,8 +60,12 @@
 	},
 	"expected": {
 		"nodes": 381,
-		"links": 380
+		"links": 380,
+		"cells": 0,
+		"extensions": 191,
+		"labels": 191
 	},
+	"planar": false,
 	"target": {
 		"x": -0.0027083797414860084,
 		"y": 3.9512398516584475,
