@@ -25,7 +25,8 @@ What the sphere adds:
   open to look through. The 0.4° taken off the far edge of every band is the
   analogue of `outerRadius − 1`.
 - outer radius `R = 10`: every cell's outer face lies on this one sphere. Radial
-  thickness of a cell: `h = 0.02R + 0.6R · (value / root.value)^(1/2)` (0.2 … 4.24).
+  thickness of a cell: `h = 0.005R + 0.15R · (value / root.value)^(1/2)` (0.05 … 1.55,
+  a shallow cap; the draft's `0.02R + 0.6R·√` reached 4.24 and was cut on review).
   Every cell is a solid shell sector from radius `R − h` to `R`: outer and inner
   spherical patches plus four side walls. Tessellation: one segment per 3° of
   longitude, rounded up to an even count (min 2), 4 segments of latitude.
@@ -61,10 +62,14 @@ pixel, all must hit themselves):
    is hidden by a neighbour (6–19 of 20 hit, mean 12.6; `EXTRUDE = +1` at the shipped
    camera: A 17/20, B 18/20). A facing margin does not fix it either: at
    `cos > 0.7` camera B still has 3–12 misses of 30–60. This is genuine occlusion,
-   not a bug — the pixel of that cell really shows the neighbour.
-3. So the thickness now grows *inward*: outer faces all on the sphere `R`, inner
+   not a bug — the pixel of that cell really shows the neighbour. Retried on
+   review with the shallow cap (`h ≤ 1.55`, mark at the outer-face centre): still
+   0 of 180 cameras pass (11–20 of 20 hit, mean 16.6), so the ruling stands on
+   evidence: outward cannot pass §B.10 at any thickness a sunburst's slivers allow.
+3. So the thickness grows *inward*: outer faces all on the sphere `R`, inner
    faces at `R − h`. The outer surface is then smooth, front-facing means visible,
-   and the gate passes from every one of those 180 cameras (20/20 both). The
+   and the gate passes from every one of those 180 cameras (20/20 both, at the
+   shallow cap too). The
    value is still radial thickness, read through the south-pole hole and, in the
    live page, by orbiting under the sphere. The page keeps `EXTRUDE = ±1` as one
    constant so the outward version can be looked at (it is the more striking
@@ -82,14 +87,15 @@ pixel, all must hit themselves):
   front-facing cells per camera).
 - no node or link marks. `expected = { nodes: 0, links: 0, cells: 251 }`.
 - `pickables`: the 251 cell meshes.
-- labels: see below.
+- labels: see below (79 placed, not marks).
 
 ## Labels
 
-Built with `src/labels.js` (lib3 sdf-text, rung 3), not marks. The set is the
+Built with `src/labels.js` (lib3 sdf-text, rung 3), not marks. Candidates are the
 notebook's: cells with `(y0+y1)/2 · (x1−x0) > 10` in the notebook's own units
-(partition size `[2π, 464]`), 93 of the 251. `hierarchyLabels` is handed a pseudo-root
-`{ descendants: () => subset }` over the real d3 nodes, ids `c<i>` from the marks.
+(partition size `[2π, 464]`), 93 of the 251; **79 are placed** (below). `hierarchyLabels`
+is handed a pseudo-root `{ descendants: () => subset }` over the real d3 nodes, ids
+`c<i>` from the marks.
 
 Placement is the notebook's radial, centred text (`rotate(x−90) translate(y,0)`,
 `text-anchor: middle`) on the sphere: each label lies in the tangent plane of the
@@ -103,25 +109,33 @@ camera instead of the angle. Both frames face outward and are rotations, so
 nothing (`flipped: 0`); the draft of this note said "baseline along longitude", which
 would have needed a west-up frame and mirrored the left half.
 
-Font Roboto Regular, em height 8 px at the harness's 250 px frame (`fontSize` =
-`8 / pxPerUnit` = 0.694 world units), fill `#333`, outline 0.25 white, anchorX
-`center` (set on each `Text` after `hierarchyLabels` returns, then one more
-`sync()`), anchorY middle, render order 1. `expected.labels = 93`; the marks dump
-carries `labels: [{ id, text, x, y, z, q, anchorX: 'center' }]`. Long names in the
-deepest band (`AspectRatioBanker`, `HierarchicalCluster`) overrun their band along the
-meridian exactly as the notebook's overrun its ring.
+Font Roboto Regular, fill `#333`, outline 0.25 white, anchorX `center` (set on each
+`Text` after `hierarchyLabels` returns, then one more `sync()`), anchorY middle,
+render order 1. **Em per label** = min of: 8 px at the harness's 250 px frame
+(`8 / pxPerUnit`); 0.7 × the cell's chord width *across* the baseline (its longitude
+chord at the mark point, `2R sin(colat) sin(Δlon/2)` — the glyphs must fit the cell's
+width); and the em at which the string's advance is 0.55 × the band's arc height
+*along* the baseline (`R·(colat1 − colat0)`, advance measured at em 1 in a probe
+layout). A label whose em would be under 2 px is dropped: 14 of the 93 candidates
+(deep slivers), 79 placed, em 2.10 … 8.00 px. `expected.labels = 79`; the marks dump
+carries `labels: [{ id, text, x, y, z, q, anchorX: 'center' }]`. Nothing overruns
+its cell any more.
 
 ## Camera
 
 Pole axis = scene up. `frameCamera` fov 40, elevation 35°, azimuth 150°, fill 0.85,
-fitted to the mark positions. Azimuth `a` puts camera A at longitude `90° − a`, so A
+fitted to the full geometry: the 8 world bounding-box corners of every cell mesh plus
+the 4 corners of every label (fit on the corners first, lay the labels out at that
+distance, refit with the label corners, resize the labels to the final distance and
+rebuild out any that fall under 2 px). The draft fitted the mark points, which lie
+on the outer face, and the deepest band ran off the bottom of the reference. Azimuth `a` puts camera A at longitude `90° − a`, so A
 looks at longitude 300° (where query, analytics, scale and data meet) and camera B
 (rotated +90° about up) at 210° (util, animate); both see the pole cap and several
 packages. The draft's azimuth 20° put camera A at longitude 70°, in the middle of
 `vis` (which spans 0°–163°), so the whole near side was one colour.
 
-Gates as shipped: depth 0.804 · counts 0/0, 0/0, cells 251/251 · angle 0.488 /
-0.489 · picking 20/20 from both cameras (141 / 132 cells front-facing) · labels 93/93.
+Gates as shipped: depth 0.804 · counts 0/0, 0/0, cells 251/251 · angle 0.302 /
+0.310 · picking 20/20 from both cameras (144 / 135 cells front-facing) · labels 79/79.
 
 ## Primitives for `src/`
 
@@ -129,7 +143,8 @@ Gates as shipped: depth 0.804 · counts 0/0, 0/0, cells 251/251 · angle 0.488 /
 → `{ geometry, centroid, normal }`, a closed BufferGeometry in local coordinates
 around `origin` (default: the sector's centre at mid-radius); every face has its
 own vertices, wound outward (checked: signed volume > 0 for all 251). Also exports
-`spherical(r, colat, lon)`. Labels use `src/labels.js` as is. Nothing else new.
+`spherical(r, colat, lon)`. Labels use `src/labels.js` as is (a probe layout at em 1
+measures each string; per-label `fontSize` is set afterwards). Nothing else new.
 
 ## For three-rs
 
@@ -138,4 +153,5 @@ d3-interpolate/d3-scale-chromatic (interpolateRainbow, interpolateRgb, quantize)
 Layout: the band and thickness formulas above, ~20 lines on top of partition's
 `x0/x1/depth/value`; the shell-sector mesh is ~100 lines. Labels: 93 SDF-text
 strings, each a position, a quaternion (tangent frame, baseline along the meridian)
-and `anchorX: center`, all in `marks/d3_sunburst.json`.
+and `anchorX: center`, all in `marks/d3_sunburst.json`, plus each label's em (the
+`fontSize` rule above).

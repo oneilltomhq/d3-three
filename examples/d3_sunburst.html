@@ -41,12 +41,16 @@
 
 			const R = 10;                              // radius of the sphere every cell's outer face lies on
 			const EXTRUDE = - 1;                       // -1: thickness grows inward from R; +1: outward (see layouts/sunburst.md)
+			const H0 = 0.005, H1 = 0.15;               // thickness h = (H0 + H1 sqrt(value / root.value)) R: 0.05 .. 1.55
 			const THETA = 150 * Math.PI / 180;         // colatitude of the deepest ring's far edge
 			const BAND_PAD = 0.4 * Math.PI / 180;      // gap between depth bands (outerRadius - 1)
 			const LON_PER_SEGMENT = 3 * Math.PI / 180; // tessellation: one segment per 3 degrees, even count
 			const LAT_SEGMENTS = 4;
 			const MARK_SINK = 1e-4;                    // mark point sits this far inside the outer face
-			const LABEL_PX = 8;                        // label em height at the harness's 250 px frame
+			const LABEL_PX = 8;                        // label em height cap at the harness's 250 px frame
+			const LABEL_MIN_PX = 2;                    // labels that would be smaller are dropped
+			const LABEL_ACROSS = 0.7;                  // em <= this x the cell's chord width across the baseline
+			const LABEL_ALONG = 0.55;                  // string advance <= this x the band's arc height along the baseline
 			const LABEL_LIFT = 0.02;                   // label plane sits this far above the outer face
 
 			await init();
@@ -166,43 +170,66 @@
 
 				}
 
-				/* ---------------- camera + renderer ---------------- */
+				/* ---------------- camera ----------------
+				   Fitted to the full geometry: the 8 corners of every cell's world
+				   bounding box (not the mark points, which lie on the outer face
+				   and would leave the walls and the deepest band outside the
+				   frame), plus, once they exist, the corners of every label. */
 
-				const points = marks.map( m => m.object.position );
+				const cellPoints = [];
+				const _c = new THREE.Vector3();
+
+				for ( const mesh of group.children ) {
+
+					mesh.geometry.computeBoundingBox();
+					const bb = mesh.geometry.boundingBox;
+
+					for ( let k = 0; k < 8; k ++ ) {
+
+						_c.set( k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z );
+						cellPoints.push( _c.clone().add( mesh.position ) );
+
+					}
+
+				}
 
 				const box = new THREE.Box3();
-				for ( const p of points ) box.expandByPoint( p );
+				for ( const p of cellPoints ) box.expandByPoint( p );
 
 				// Azimuth a puts camera A at longitude 90 - a; 150 looks at longitude
 				// 300, where query / analytics / scale / data meet, and camera B
 				// (rotated +90) at 210, over util and animate — both see several
 				// packages, not vis alone (which spans 0..163).
-				const target = frameCamera( camera, box, {
-					elevation: 35, azimuth: 150, fill: 0.85, points
-				} );
+				const frame = points => frameCamera( camera, box, { elevation: 35, azimuth: 150, fill: 0.85, points } );
+				const pxPerUnitAt = target => 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+
+				let target = frame( cellPoints );
 
 				/* ---------------- labels (src/labels.js) ----------------
-				   The notebook's subset: cells whose mid-radius arc length exceeds
-				   10 px in its own units ((y0+y1)/2 * (x1-x0) > 10 at radius 464).
-				   Each label lies tangent to the sphere just above the cell's outer
-				   face, centred on the mark point, baseline along the meridian
-				   (the notebook's radial text: rotate(x-90) translate(y,0)),
-				   centred as the notebook's text-anchor: middle. Mirror check
-				   from camera A flips it about the surface normal so it reads
-				   left-to-right; em height LABEL_PX at the frame's 250 px. Laid
-				   out (font awaited) before the animation loop exists. */
+				   Candidates: the notebook's subset, cells whose mid-radius arc
+				   length exceeds 10 px in its own units ((y0+y1)/2 * (x1-x0) > 10
+				   at radius 464), 93 cells. Each label lies tangent to the sphere
+				   just above the cell's outer face, centred on the mark point,
+				   baseline along the meridian (the notebook's radial text:
+				   rotate(x-90) translate(y,0)), text-anchor middle. Em height per
+				   label: at most LABEL_PX at the frame's 250 px, at most
+				   LABEL_ACROSS x the cell's chord width across the baseline (its
+				   longitude chord at the mark point, the glyphs must fit the
+				   cell's width), and the string's advance at most LABEL_ALONG x the
+				   band's arc height along the baseline. Labels whose em would be
+				   under LABEL_MIN_PX are dropped. Laid out (font awaited) before
+				   the animation loop exists. */
 
-				const labelled = root.descendants().filter( d => d.depth && ( d.y0 + d.y1 ) / 2 * ( d.x1 - d.x0 ) > 10 );
+				const candidates = root.descendants().filter( d => d.depth && ( d.y0 + d.y1 ) / 2 * ( d.x1 - d.x0 ) > 10 );
 
 				const labelPoint = new Map();
-				for ( const node of labelled ) labelPoint.set( node, markPoint.get( node ).clone().addScaledVector( markPoint.get( node ).clone().normalize(), MARK_SINK + LABEL_LIFT ) );
+				for ( const node of candidates ) labelPoint.set( node, markPoint.get( node ).clone().addScaledVector( markPoint.get( node ).clone().normalize(), MARK_SINK + LABEL_LIFT ) );
 
-				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
-				const fontSize = LABEL_PX / pxPerUnit;
+				const cellOf = new Map( cells.map( c => [ c.node, c ] ) );
 
-				labels = await hierarchyLabels( { descendants: () => labelled }, ids, labelPoint, {
+				const labelOptions = {
 					font: '/examples/fonts/Roboto-Regular.ttf',
-					fontSize,
+					fontSize: 1, // per-label em is set after layout (see below)
 					color: 0x333333,
 					outlineWidth: 0.25, outlineColor: 0xffffff,
 					leafOffset: 0, internalOffset: 0,
@@ -229,13 +256,62 @@
 					},
 					camera,
 					billboard: false
+				};
+
+				// measuring pass: every candidate at em 1, for the string advance in em
+				const probe = await hierarchyLabels( { descendants: () => candidates }, ids, labelPoint, labelOptions );
+				const advance = new Map( probe.labels.map( l => [ l.node, l.object.textRenderInfo.blockBounds[ 2 ] - l.object.textRenderInfo.blockBounds[ 0 ] ] ) );
+
+				const emFor = ( node, pxPerUnit ) => {
+
+					const c = cellOf.get( node );
+					const across = 2 * R * Math.sin( ( c.colat0 + c.colat1 ) / 2 ) * Math.sin( ( c.lon1 - c.lon0 ) / 2 );
+					const along = R * ( c.colat1 - c.colat0 );
+					return Math.min( LABEL_PX / pxPerUnit, LABEL_ACROSS * across, LABEL_ALONG * along / advance.get( node ) );
+
+				};
+
+				const buildLabels = async ( pxPerUnit ) => {
+
+					const placed = candidates.filter( node => emFor( node, pxPerUnit ) * pxPerUnit >= LABEL_MIN_PX );
+					const built = await hierarchyLabels( { descendants: () => placed }, ids, labelPoint, labelOptions );
+
+					// per-label em and text-anchor: middle, as the notebook
+					for ( const l of built.labels ) {
+
+						l.object.fontSize = emFor( l.node, pxPerUnit );
+						l.object.anchorX = 'center';
+						l.anchorX = 'center';
+
+					}
+
+					built.batched.sync();
+					return built;
+
+				};
+
+				let pxPerUnit = pxPerUnitAt( target );
+				labels = await buildLabels( pxPerUnit );
+
+				// refit with the label corners in the frame, then size the labels
+				// to that (slightly farther) camera; a label that drops under the
+				// minimum at the final distance is rebuilt out.
+				const labelCorners = built => built.labels.flatMap( l => {
+
+					const bb = l.object.textRenderInfo.blockBounds;
+					l.object.updateMatrixWorld( true );
+					return [ [ bb[ 0 ], bb[ 1 ] ], [ bb[ 2 ], bb[ 1 ] ], [ bb[ 0 ], bb[ 3 ] ], [ bb[ 2 ], bb[ 3 ] ] ]
+						.map( ( [ x, y ] ) => new THREE.Vector3( x, y, 0 ).applyMatrix4( l.object.matrixWorld ) );
+
 				} );
 
-				// text-anchor: middle, as the notebook; the mirror flip keeps the block on the mark
-				for ( const l of labels.labels ) { l.object.anchorX = 'center'; l.anchorX = 'center'; }
-				labels.batched.sync();
+				target = frame( cellPoints.concat( labelCorners( labels ) ) );
+				pxPerUnit = pxPerUnitAt( target );
+				labels = await buildLabels( pxPerUnit );
 
 				scene.add( labels.group );
+
+				const emPx = labels.labels.map( l => l.object.fontSize * pxPerUnit );
 
 				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
 				renderer.setPixelRatio( window.devicePixelRatio );
@@ -247,13 +323,14 @@
 
 				console.log( 'd33 backend:', renderer.backend.constructor.name,
 					'cells:', cells.length, 'height:', root.height, 'R:', R,
-					'labels:', labels.count, 'flipped:', labels.flipped, 'fontSize:', fontSize.toFixed( 3 ), 'px:', ( fontSize * pxPerUnit ).toFixed( 2 ) );
+					'labels:', labels.count, '/', candidates.length, 'flipped:', labels.flipped,
+					'px min:', Math.min( ...emPx ).toFixed( 2 ), 'max:', Math.max( ...emPx ).toFixed( 2 ) );
 
 				attachOrbit( camera, renderer.domElement, target );
 
 				register( {
 					renderer, scene, camera, marks, target,
-					expected: { nodes: 0, links: 0, cells: root.descendants().filter( d => d.depth ).length, labels: labelled.length },
+					expected: { nodes: 0, links: 0, cells: root.descendants().filter( d => d.depth ).length, labels: labels.count },
 					pickables: group.children,
 					labels
 				} );
@@ -284,7 +361,7 @@
 					const colat0 = THETA * ( node.depth - 1 ) / H;
 					const colat1 = THETA * node.depth / H - BAND_PAD;
 
-					const h = 0.02 * R + 0.6 * R * Math.sqrt( node.value / root.value );
+					const h = H0 * R + H1 * R * Math.sqrt( node.value / root.value );
 
 					cells.push( {
 						node, lon0, lon1, colat0, colat1,
