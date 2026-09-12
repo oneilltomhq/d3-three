@@ -37,7 +37,7 @@ const THREE_DIR = path.resolve( process.env.THREE_DIR || path.join( os.homedir()
 
 /* Configuration */
 
-const port = 1234;
+const port = Number( process.env.E2E_PORT ) || 1234;
 const pixelThreshold = 0.1; // threshold error in one pixel
 const maxDifferentPixels = 0.1; // at most 0.1% different pixels
 

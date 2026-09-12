@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - hierarchical edge bundling on a sphere</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 hierarchical edge bundling (flare imports) lifted to a sphere</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import { register } from 'd33';
+			import { bundleCurve, fatLineColored, coloredLineMaterial } from '/src/bundle.js';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
+
+			let renderer, scene, camera, labels;
+
+			/* ---------------- the notebook's own cells, verbatim ---------------- */
+
+			function hierarchy(data, delimiter = ".") {
+			  let root;
+			  const map = new Map;
+			  data.forEach(function find(data) {
+			    const {name} = data;
+			    if (map.has(name)) return map.get(name);
+			    const i = name.lastIndexOf(delimiter);
+			    map.set(name, data);
+			    if (i >= 0) {
+			      find({name: name.substring(0, i), children: []}).children.push(data);
+			      data.name = name.substring(i + 1);
+			    } else {
+			      root = data;
+			    }
+			    return data;
+			  });
+			  return root;
+			}
+
+			function bilink(root) {
+			  const map = new Map(root.leaves().map(d => [id(d), d]));
+			  for (const d of root.leaves()) d.incoming = [], d.outgoing = d.data.imports.map(i => [d, map.get(i)]);
+			  for (const d of root.leaves()) for (const o of d.outgoing) o[1].incoming.push(o);
+			  return root;
+			}
+
+			function id(node) {
+			  return `${node.parent ? id(node.parent) + "." : ""}${node.data.name}`;
+			}
+
+			const color = t => d3.interpolateRdBu(1 - t);
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data + d3 layout (as the notebook's chart cell) ---------------- */
+
+				const data = hierarchy( await fetch( '/gallery/networks/hierarchical-edge-bundling.v2/files/flare.json' ).then( r => r.json() ) );
+
+				const width = 954;
+				const radius = width / 2;
+
+				const tree = d3.cluster()
+					.size( [ 2 * Math.PI, radius - 100 ] );
+				const root = tree( bilink( d3.hierarchy( data )
+					.sort( ( a, b ) => d3.ascending( a.height, b.height ) || d3.ascending( a.data.name, b.data.name ) ) ) );
+
+				const imports = root.leaves().flatMap( leaf => leaf.outgoing );
+
+				const { position, unit, north, R } = sphereLayout( root );
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.2 ) );
+
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.8 );
+				sun.position.set( 1, 2, 1.5 ).normalize();
+				scene.add( sun );
+
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				/* ---------------- marks: one Object3D per datum ---------------- */
+
+				// node marks: one small sphere per descendant. Leaves are the
+				// notebook's classes (#333, on the sphere); internal nodes are the
+				// bundle waypoints inside it, lighter and smaller.
+				const LEAF_R = 0.12, INTERNAL_R = 0.09;
+				const leafGeometry = new THREE.SphereGeometry( LEAF_R, 12, 8 );
+				const internalGeometry = new THREE.SphereGeometry( INTERNAL_R, 10, 7 );
+				const leafMaterial = new THREE.MeshStandardNodeMaterial( { color: 0x333333, roughness: 0.65, metalness: 0 } );
+				const internalMaterial = new THREE.MeshStandardNodeMaterial( { color: 0x9a9a9a, roughness: 0.65, metalness: 0 } );
+
+				const nodes = new THREE.Group();
+				nodes.name = 'nodes';
+				scene.add( nodes );
+
+				const ids = new Map();
+				root.each( ( node, i ) => ids.set( node, 'n' + i ) );
+
+				const marks = [];
+
+				for ( const node of root.descendants() ) {
+
+					const leaf = ! node.children;
+					const mesh = new THREE.Mesh( leaf ? leafGeometry : internalGeometry, leaf ? leafMaterial : internalMaterial );
+					mesh.position.copy( position.get( node ) );
+					mesh.name = id( node );
+					nodes.add( mesh );
+
+					const mark = { id: ids.get( node ), kind: 'node', object: mesh };
+					// leaves sit on the sphere's skin: only pickable from a camera they face
+					if ( leaf ) mark.normal = unit.get( node );
+					marks.push( mark );
+
+				}
+
+				// links: one Line2 per import, the 3D curveBundle through the
+				// hierarchy path source -> target, coloured per vertex with the
+				// notebook's colour ramp (source red -> target blue).
+				const BETA = 0.85, SAMPLES_PER_SPAN = 8;
+				const linkMaterial = coloredLineMaterial( { opacity: 0.8, linewidth: 2 } );
+
+				const links = new THREE.Group();
+				links.name = 'links';
+				scene.add( links );
+
+				const ramps = new Map(); // vertex count -> THREE.Color[]
+				const ramp = n => {
+
+					if ( ! ramps.has( n ) ) {
+
+						const colors = [];
+						for ( let j = 0; j < n; j ++ ) colors.push( new THREE.Color( color( d3.easeQuad( j / ( n - 1 ) ) ) ) );
+						ramps.set( n, colors );
+
+					}
+
+					return ramps.get( n );
+
+				};
+
+				let endpointError = 0;
+
+				for ( const [ source, target ] of imports ) {
+
+					const control = source.path( target ).map( n => position.get( n ) );
+					const points = bundleCurve( control, BETA, SAMPLES_PER_SPAN );
+
+					endpointError = Math.max( endpointError,
+						points[ 0 ].distanceTo( position.get( source ) ),
+						points[ points.length - 1 ].distanceTo( position.get( target ) ) );
+
+					const line = fatLineColored( points, ramp( points.length ), linkMaterial );
+					line.name = id( source ) + ' -> ' + id( target );
+					links.add( line );
+
+					marks.push( {
+						id: 'l' + marks.length, kind: 'link', object: line,
+						a: ids.get( source ), b: ids.get( target )
+					} );
+
+				}
+
+				/* ---------------- camera ---------------- */
+
+				const nodePoints = marks.filter( m => m.kind === 'node' ).map( m => m.object.position );
+
+				const box = new THREE.Box3();
+				for ( const p of nodePoints ) box.expandByPoint( p );
+
+				const view = { elevation: 25, azimuth: 30, fill: 0.85 };
+				let target = frameCamera( camera, box, { ...view, points: nodePoints } );
+
+				/* ---------------- labels: one Text per node (src/labels.js) ----------------
+				   Radial, as the notebook's: baseline +x = the node's radial
+				   direction (outward), +y = local north on the sphere, so each
+				   leaf label sticks out of the sphere along its own radius and
+				   internal labels point inward along theirs. Em size capped at
+				   LABEL_PX at the target distance and at 0.6 of the closest two
+				   leaves (full pitch overlaps in projection, as on the cone tree).
+				   The camera is then refitted to the leaf labels' far ends, the
+				   notebook's 100 px label margin: nodes alone would clip them. */
+
+				const LABEL_PX = 8;
+				let leafPitch = Infinity;
+				const leaves = root.leaves();
+				for ( let i = 0; i < leaves.length; i ++ ) for ( let j = i + 1; j < leaves.length; j ++ ) {
+
+					leafPitch = Math.min( leafPitch, position.get( leaves[ i ] ).distanceTo( position.get( leaves[ j ] ) ) );
+
+				}
+
+				const leafOffset = LEAF_R + 0.15;
+				let pxPerUnit, fontSize;
+
+				const fit = () => {
+
+					pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+					fontSize = Math.min( LABEL_PX / pxPerUnit, 0.6 * leafPitch );
+
+				};
+
+				fit();
+
+				for ( let i = 0; i < 3; i ++ ) {
+
+					// far end of each leaf label: ~0.5 em per glyph of Roboto
+					const tips = leaves.map( l => position.get( l ).clone()
+						.addScaledVector( unit.get( l ), leafOffset + 0.5 * fontSize * l.data.name.length ) );
+					target = frameCamera( camera, box, { ...view, points: nodePoints.concat( tips ) } );
+					fit();
+
+				}
+
+				labels = await hierarchyLabels( root, ids, position, {
+					font: '/examples/fonts/Roboto-Regular.ttf',
+					fontSize,
+					color: 0x333333,
+					outlineWidth: 0.25, outlineColor: 0xffffff,
+					leafOffset, internalOffset: INTERNAL_R + 0.15,
+					orient: node => basisQuaternion( unit.get( node ), north.get( node ) ),
+					camera,
+					billboard: false
+				} );
+				scene.add( labels.group );
+
+				/* ---------------- renderer ---------------- */
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'R:', R, 'leafPitch:', leafPitch.toFixed( 3 ), 'fontSize:', fontSize.toFixed( 3 ), 'px:', ( fontSize * pxPerUnit ).toFixed( 2 ),
+					'labels:', labels.count, 'flipped:', labels.flipped,
+					'nodes:', root.descendants().length, 'imports:', imports.length,
+					'curves:', links.children.length, 'endpointError:', endpointError.toExponential( 2 ) );
+
+				attachOrbit( camera, renderer.domElement, target );
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: root.descendants().length, links: imports.length },
+					pickables: nodes.children,
+					labels
+				} );
+
+			}
+
+			/* ---------------- the sphere (layouts/bundling.md) ----------------
+			   d3.cluster decided every node's longitude (node.x, verbatim) and
+			   the sibling order. Leaves go on a sphere of radius R at that
+			   longitude, fanned in latitude about the equator by their rank
+			   among their leaf siblings. Internal nodes — the bundles' waypoints
+			   — sit inside, at radius R * depth / height, in the mean direction
+			   of their leaves; the root is at the centre. */
+
+			function sphereLayout( root, { R = 10 } = {} ) {
+
+				const H = root.height;
+				const position = new Map();
+				const unit = new Map();  // node -> radial unit vector (normal for leaves)
+				const north = new Map(); // node -> local north (d position / d latitude)
+
+				for ( const leaf of root.leaves() ) {
+
+					const siblings = leaf.parent.children.filter( c => ! c.children );
+					const k = siblings.length;
+					const i = siblings.indexOf( leaf );
+
+					const lat = ( ( i + 0.5 ) / k - 0.5 ) * ( Math.PI / 2 ) * Math.min( 1, k / 10 );
+					const lon = leaf.x;
+
+					const u = new THREE.Vector3( Math.cos( lat ) * Math.cos( lon ), Math.sin( lat ), Math.cos( lat ) * Math.sin( lon ) );
+					unit.set( leaf, u );
+					north.set( leaf, new THREE.Vector3( - Math.sin( lat ) * Math.cos( lon ), Math.cos( lat ), - Math.sin( lat ) * Math.sin( lon ) ) );
+					position.set( leaf, u.clone().multiplyScalar( R ) );
+
+				}
+
+				root.eachAfter( node => {
+
+					if ( ! node.children ) return;
+
+					const u = new THREE.Vector3();
+					for ( const leaf of node.leaves() ) u.add( unit.get( leaf ) );
+
+					if ( u.lengthSq() > 0 ) u.normalize(); else u.set( 1, 0, 0 );
+					if ( node.depth === 0 ) u.set( 1, 0, 0 ); // root: at the centre, labelled along +x
+
+					unit.set( node, u );
+					north.set( node, new THREE.Vector3( 0, 1, 0 ).addScaledVector( u, - u.y ).normalize() );
+					position.set( node, u.clone().multiplyScalar( R * node.depth / H ) );
+
+				} );
+
+				return { position, unit, north, R };
+
+			}
+
+			function animate() {
+
+				labels.update( camera ); // no-op unless billboard: true
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

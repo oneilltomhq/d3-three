@@ -10,6 +10,9 @@
 //   expected: { nodes, links } straight off the d3 hierarchy
 //             ( root.descendants().length, root.links().length ) (§C.12)
 //   target:   optional orbit target; defaults to the centroid of node/cell marks.
+//   normal:   optional on a mark (unit Vector3 or [x,y,z]); the picking gate
+//             samples a mark from a camera only if it faces it
+//             (dot(normal, camera − mark) > 0). Absent = always eligible.
 //   pickables: optional array of Object3D the picking gate is allowed to hit.
 //             Defaults to the node/cell mark objects, so grids, helpers and
 //             link geometry can never occlude a node (rung 0 director ruling).
@@ -290,32 +293,63 @@ function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 
 	}
 
-	const step = Math.max( 1, Math.floor( nodeMarks.length / PICK_SAMPLES ) );
 	const raycaster = new THREE.Raycaster();
 
+	// A mark may carry `normal` (unit Vector3 or [x, y, z]): a node on the skin
+	// of a closed surface is only sampled from a camera it faces, since from
+	// the other side its own pixel is the far side of the surface (bundling).
+	// Marks without a normal are eligible from every camera, as before.
+	const facing = ( mark, p, camera ) => {
+
+		if ( ! mark.normal ) return true;
+		const n = mark.normal.isVector3 ? mark.normal : new THREE.Vector3().fromArray( mark.normal );
+		return n.dot( camera.position.clone().sub( p ) ) > 0;
+
+	};
+
+	const sampleFrom = ( camera ) => {
+
+		const eligible = nodeMarks.filter( m => facing( m, positions.get( m.id ), camera ) );
+		const step = Math.max( 1, Math.floor( eligible.length / PICK_SAMPLES ) );
+		const picked = [];
+
+		for ( let i = 0; i < eligible.length && picked.length < PICK_SAMPLES; i += step ) picked.push( eligible[ i ] );
+
+		return picked;
+
+	};
+
 	const misses = [];
-	let sampled = 0, hitA = 0, hitB = 0;
+	const sampledIds = new Set();
+	let hitA = 0, hitB = 0;
 
-	for ( let i = 0; i < nodeMarks.length && sampled < PICK_SAMPLES; i += step ) {
+	const cast = ( camera, key ) => {
 
-		const mark = nodeMarks[ i ];
-		const p = positions.get( mark.id );
+		const picked = sampleFrom( camera );
 
-		sampled ++;
+		for ( const mark of picked ) {
 
-		const ndcA = p.clone().project( cameraA );
-		const ndcB = p.clone().project( cameraB );
+			const p = positions.get( mark.id );
+			const ok = hits( raycaster, camera, p.clone().project( camera ), mark.object, pickables );
 
-		const okA = hits( raycaster, cameraA, ndcA, mark.object, pickables );
-		const okB = hits( raycaster, cameraB, ndcB, mark.object, pickables );
+			sampledIds.add( mark.id );
+			if ( ok ) key === 'a' ? hitA ++ : hitB ++;
+			else misses.push( { id: mark.id, camera: key } );
 
-		if ( okA ) hitA ++;
-		if ( okB ) hitB ++;
-		if ( ! okA || ! okB ) misses.push( { id: mark.id, a: okA, b: okB } );
+		}
 
-	}
+		return picked.length;
 
-	return { sampled, hitA, hitB, pickables: pickables.length, misses, pass: sampled > 0 && hitA === sampled && hitB === sampled };
+	};
+
+	const sampledA = cast( cameraA, 'a' );
+	const sampledB = cast( cameraB, 'b' );
+	const sampled = sampledIds.size; // distinct marks raycast from either camera
+
+	return {
+		sampled, sampledA, sampledB, hitA, hitB, pickables: pickables.length, misses,
+		pass: sampledA > 0 && sampledB > 0 && hitA === sampledA && hitB === sampledB
+	};
 
 }
 
