@@ -256,7 +256,8 @@
 					'cells:', marks.length, 'labels:', labels.count, 'turned:', turned, 'flipped:', labels.flipped,
 					'em px at 400x250:', ( LABEL_PX * S * pxPerUnit ).toFixed( 2 ) );
 
-				attachOrbit( camera, renderer.domElement, target );
+				const controls = attachOrbit( camera, renderer.domElement, target );
+				window.d33dev = { camera, controls, labels };
 
 				register( {
 					renderer, scene, camera, marks, target,
@@ -333,7 +334,7 @@
 
 			function animate() {
 
-				labels.update( camera ); // no-op unless billboard: true
+				labels.update( camera ); // per-frame mirror flip (plane fixed); billboard if enabled
 				renderer.render( scene, camera );
 
 			}
