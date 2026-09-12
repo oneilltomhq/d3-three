@@ -39,6 +39,17 @@ const outFile = process.argv[ 3 ] || `ref/${ slug }.png`;
 // screenshot. Default 0, so the static notebooks are unchanged.
 const settleMs = Number( process.env.REF_SETTLE_MS ) || 0;
 
+// tree-of-life: its `width` cell is 954 (the preset below is 928, and presets
+// shadow cells), its SVG has a viewBox but no width/height (so it has no
+// natural size in the shrink-to-fit #chart), and its branch-length view is
+// the `update` cell run with `showLength = true`. Three additive knobs:
+//   REF_VALUES='{"width":954,"showLength":true}'  JSON merged over the presets
+//   REF_SVG_SIZE=954   width/height (px) given to a returned SVG that has none
+//   REF_THEN=update    comma-separated cells evaluated after `chart`
+const extraValues = JSON.parse( process.env.REF_VALUES || '{}' );
+const svgSize = Number( process.env.REF_SVG_SIZE ) || 0;
+const thenCells = ( process.env.REF_THEN || '' ).split( ',' ).map( s => s.trim() ).filter( Boolean );
+
 /* The notebook's cell wiring: cell name -> { deps, fn } */
 
 function cellDefinitions( source ) {
@@ -108,7 +119,7 @@ await page.evaluate( async url => {
 
 }, `http://localhost:${ port }/examples/jsm/vendor/d3.js` );
 
-const size = await page.evaluate( async ( script, cells, filesBase ) => {
+const size = await page.evaluate( async ( script, cells, filesBase, extraValues, svgSize, thenCells ) => {
 
 	eval( script ); // eslint-disable-line no-eval
 
@@ -143,14 +154,25 @@ const size = await page.evaluate( async ( script, cells, filesBase ) => {
 
 	};
 
+	Object.assign( values, extraValues );
+
 	const node = await call( 'chart' );
 
+	if ( svgSize > 0 && node.tagName === 'svg' && ! node.hasAttribute( 'width' ) ) {
+
+		node.setAttribute( 'width', svgSize );
+		node.setAttribute( 'height', svgSize );
+
+	}
+
 	document.getElementById( 'chart' ).appendChild( node );
+
+	for ( const name of thenCells ) await call( name );
 
 	const rect = node.getBoundingClientRect();
 	return { width: Math.ceil( rect.width ), height: Math.ceil( rect.height ) };
 
-}, script, Object.fromEntries( cells ), `http://localhost:${ port }/gallery/${ target }/files/` );
+}, script, Object.fromEntries( cells ), `http://localhost:${ port }/gallery/${ target }/files/`, extraValues, svgSize, thenCells );
 
 await page.setViewport( { width: size.width, height: size.height } );
 
