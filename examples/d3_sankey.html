@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - sankey, flat in the 3D world</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 sankey (energy.csv), the notebook's chart rendered flat inside the 3D world (planar by ruling)</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d3-sankey": "/examples/jsm/vendor/d3-sankey.js",
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import { sankey as d3sankey, sankeyJustify } from 'd3-sankey';
+			import { register } from 'd33';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
+
+			let renderer, scene, camera, labels;
+
+			/* ---------------- layouts/sankey.md ----------------
+			   Planar by ruling (handoff/rung0/LOG.md): the notebook's sankey
+			   diagram, drawn faithfully in the xz plane of the 3D world.
+			   d3-sankey decides every node rect and link band exactly as the
+			   notebook; nodes are lit slabs, links are lit ribbons under them. */
+
+			const WIDTH = 928, HEIGHT = 600;           // the notebook's size
+			const SIDE = 20;                           // world units of the width
+			const S = SIDE / WIDTH;                    // notebook px -> world units
+			const NODE_THICK = 0.3;                    // node slab thickness (1.5 % of the width)
+			const LINK_THICK = 0.15;                   // link ribbon thickness
+			const LINK_STEP = 0.001;                   // per-link lift, in file order, so overlapping ribbons never z-fight
+			const LIFT = 0.012;                        // outlines and labels sit this far above a top face
+			const SAMPLES = 32;                        // straight segments per link edge
+			const FONT = '/examples/fonts/Roboto-Regular.ttf';
+			const LABEL_PX = 10;                       // the notebook's `font: 10px sans-serif`
+			const LABEL_PAD_PX = 6;                    // the notebook's `x1 + 6` / `x0 - 6`
+			const UP = [ 0, 1, 0 ];
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data + d3 layout (the notebook's data and chart cells) ---------------- */
+
+				const csv = await fetch( '/gallery/networks/sankey.v2/files/energy.csv' ).then( r => r.text() );
+				const rawLinks = d3.csvParse( csv, d3.autoType );
+				const rawNodes = Array.from( new Set( rawLinks.flatMap( l => [ l.source, l.target ] ) ), name => ( { name, category: name.replace( / .*/, '' ) } ) );
+
+				// the notebook's default inputs: nodeAlign "sankeyJustify", linkColor "source-target"
+				const sankey = d3sankey()
+					.nodeId( d => d.name )
+					.nodeAlign( sankeyJustify )
+					.nodeWidth( 15 )
+					.nodePadding( 10 )
+					.extent( [ [ 1, 5 ], [ WIDTH - 1, HEIGHT - 5 ] ] );
+
+				const { nodes, links } = sankey( {
+					nodes: rawNodes.map( d => Object.assign( {}, d ) ),
+					links: rawLinks.map( d => Object.assign( {}, d ) )
+				} );
+
+				// the notebook's colour scale, consumed in the notebook's order (rects first)
+				const color = d3.scaleOrdinal( d3.schemeCategory10 );
+				for ( const node of nodes ) color( node.category );
+
+				// notebook (x, y) -> world (x, z): x -> x, y -> z shifted so the
+				// chart spans z in [-HEIGHT*S, 0]; the notebook's top edge is the
+				// far edge from camera A and its left edge is the left edge.
+				const toWorld = ( x, y ) => new THREE.Vector3( x * S, 0, y * S - HEIGHT * S );
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.0 ) );
+
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.6 );
+				sun.position.set( 1.2, 2, 1 ).normalize();
+				scene.add( sun );
+
+				camera = new THREE.PerspectiveCamera( 35, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				const white = new THREE.Color( 0xffffff );
+				const nodeMaterials = new Map(); // category -> material (the notebook's fill)
+				const linkMaterials = new Map(); // source category -> material (fill at stroke-opacity 0.5 on white)
+
+				const nodeMaterial = category => {
+
+					if ( ! nodeMaterials.has( category ) ) {
+
+						nodeMaterials.set( category, new THREE.MeshStandardNodeMaterial( {
+							color: new THREE.Color( color( category ) ), roughness: 0.75, metalness: 0
+						} ) );
+
+					}
+
+					return nodeMaterials.get( category );
+
+				};
+
+				const linkMaterial = category => {
+
+					if ( ! linkMaterials.has( category ) ) {
+
+						linkMaterials.set( category, new THREE.MeshStandardNodeMaterial( {
+							color: new THREE.Color( color( category ) ).lerp( white, 0.5 ), roughness: 0.75, metalness: 0
+						} ) );
+
+					}
+
+					return linkMaterials.get( category );
+
+				};
+
+				const marks = [];
+				const ids = new Map();
+				nodes.forEach( ( node, i ) => ids.set( node, 'n' + i ) );
+
+				/* ---------------- node marks: one Mesh(BoxGeometry) per node ----------------
+				   A unit box hanging below its origin, scaled to (width, NODE_THICK,
+				   height) and placed at the centre of its top face, so the mark
+				   position is the rect's own pixel and the world-space footprint
+				   is exactly the notebook rect. */
+
+				const unitBox = new THREE.BoxGeometry( 1, 1, 1 ).translate( 0, - 0.5, 0 );
+
+				const nodeGroup = new THREE.Group();
+				nodeGroup.name = 'nodes';
+				scene.add( nodeGroup );
+
+				for ( const node of nodes ) {
+
+					const mesh = new THREE.Mesh( unitBox, nodeMaterial( node.category ) );
+					mesh.scale.set( ( node.x1 - node.x0 ) * S, NODE_THICK, ( node.y1 - node.y0 ) * S );
+					mesh.position.copy( toWorld( ( node.x0 + node.x1 ) / 2, ( node.y0 + node.y1 ) / 2 ) );
+					mesh.position.y = NODE_THICK;
+					mesh.name = node.name;
+					nodeGroup.add( mesh );
+
+					marks.push( { id: ids.get( node ), kind: 'cell', object: mesh, normal: UP } );
+
+				}
+
+				// The notebook's 1 px black stroke on every rect: one closed Line
+				// per node around its top face, lifted so nothing z-fights. Not marks.
+				const outlines = new THREE.Group();
+				outlines.name = 'outlines';
+				scene.add( outlines );
+
+				const outlineMaterial = new THREE.LineBasicNodeMaterial( { color: 0x000000 } );
+
+				for ( const node of nodes ) {
+
+					const a = toWorld( node.x0, node.y0 ), b = toWorld( node.x1, node.y0 );
+					const c = toWorld( node.x1, node.y1 ), e = toWorld( node.x0, node.y1 );
+					for ( const p of [ a, b, c, e ] ) p.y = NODE_THICK + LIFT;
+
+					const loop = new THREE.Line( new THREE.BufferGeometry().setFromPoints( [ a, b, c, e, a ] ), outlineMaterial );
+					loop.name = 'outline ' + node.name;
+					outlines.add( loop );
+
+				}
+
+				/* ---------------- link marks: one Mesh(ExtrudeGeometry) per link ----------------
+				   The notebook's path is sankeyLinkHorizontal(): a cubic Bézier from
+				   (source.x1, y0) to (target.x0, y1) with both control points at the
+				   mid x, stroked `max(1, width)` wide. Here it is a ribbon: that
+				   centreline offset ±width/2 along the notebook's vertical, as a
+				   THREE.Shape extruded LINK_THICK along +y. The mesh origin is the
+				   centre of the ribbon's top face at the Bézier's t = 0.5 (mid x,
+				   mid y), so the mark position is a pixel of the link itself.
+				   Registered as 'cell' (in this project a 'link' mark is a line);
+				   `a`/`b` carry the endpoint node ids. Each link is lifted LINK_STEP
+				   more than the one before it (file order, the notebook's paint
+				   order) so where ribbons cross the later one is on top, as the
+				   notebook's later path is, and nothing z-fights. */
+
+				const linkGroup = new THREE.Group();
+				linkGroup.name = 'links';
+				scene.add( linkGroup );
+
+				links.forEach( ( link, i ) => {
+
+					const x0 = link.source.x1, x1 = link.target.x0;
+					const y0 = link.y0, y1 = link.y1;
+					const w = Math.max( 1, link.width );
+					const xm = ( x0 + x1 ) / 2, ym = ( y0 + y1 ) / 2;
+
+					// shape (u, v) = world (x, -z) = (px * S, (HEIGHT - py) * S)
+					const bezierY = t => {
+
+						const s = 1 - t;
+						return s * s * s * y0 + 3 * s * s * t * y0 + 3 * s * t * t * y1 + t * t * t * y1;
+
+					};
+
+					const bezierX = t => {
+
+						const s = 1 - t;
+						return s * s * s * x0 + 3 * s * s * t * xm + 3 * s * t * t * xm + t * t * t * x1;
+
+					};
+
+					const pts = [];
+					for ( let k = 0; k <= SAMPLES; k ++ ) {
+
+						const t = k / SAMPLES;
+						pts.push( new THREE.Vector2( bezierX( t ) * S, ( HEIGHT - ( bezierY( t ) - w / 2 ) ) * S ) );
+
+					}
+
+					for ( let k = SAMPLES; k >= 0; k -- ) {
+
+						const t = k / SAMPLES;
+						pts.push( new THREE.Vector2( bezierX( t ) * S, ( HEIGHT - ( bezierY( t ) + w / 2 ) ) * S ) );
+
+					}
+
+					const geometry = new THREE.ExtrudeGeometry( new THREE.Shape( pts ), { depth: LINK_THICK, bevelEnabled: false } );
+
+					// (u, v, w) -> (u, w, -v): extrusion along +y, shape v -> world -z;
+					// then local coordinates around the top-face centre
+					const centre = toWorld( xm, ym );
+					geometry.rotateX( - Math.PI / 2 );
+					geometry.translate( - centre.x, - LINK_THICK, - centre.z );
+					geometry.computeVertexNormals();
+
+					const mesh = new THREE.Mesh( geometry, linkMaterial( link.source.category ) );
+					mesh.position.set( centre.x, LINK_THICK + i * LINK_STEP, centre.z );
+					mesh.name = link.source.name + ' → ' + link.target.name;
+					linkGroup.add( mesh );
+
+					marks.push( { id: 'l' + i, kind: 'cell', object: mesh, normal: UP, a: ids.get( link.source ), b: ids.get( link.target ) } );
+
+				} );
+
+				/* ---------------- camera ---------------- */
+
+				const box = new THREE.Box3( new THREE.Vector3( 0, 0, - HEIGHT * S ), new THREE.Vector3( SIDE, NODE_THICK + LIFT, 0 ) );
+				const view = { elevation: 55, azimuth: 15, fill: 0.85 };
+				const frame = points => frameCamera( camera, box, { ...view, points } );
+
+				const boxCorners = [];
+				for ( let k = 0; k < 8; k ++ ) {
+
+					boxCorners.push( new THREE.Vector3( k & 1 ? box.max.x : box.min.x, k & 2 ? box.max.y : box.min.y, k & 4 ? box.max.z : box.min.z ) );
+
+				}
+
+				let target = frame( boxCorners );
+
+				/* ---------------- labels: as the notebook, lying in the top plane ----------------
+				   One Text per node: `x0 < width/2 ? x1 + 6 : x0 - 6`, y at the
+				   rect's middle, dy 0.35em (anchorY middle), text-anchor start on
+				   the left half and end on the right half, 10 px sans-serif = 10·S
+				   world units. hierarchyLabels anchors leaves `start` (+offset
+				   along +x) and internal nodes `end` (−offset along −x), so each
+				   wrapper is a "leaf" when its node is on the left half and
+				   "internal" (an empty `children`) when on the right. */
+
+				const flat = basisQuaternion( new THREE.Vector3( 1, 0, 0 ), new THREE.Vector3( 0, 0, - 1 ) );
+				const fontSize = LABEL_PX * S;
+				const pad = LABEL_PAD_PX * S;
+
+				const wrappers = nodes.map( node => node.x0 < WIDTH / 2 ? { data: node } : { data: node, children: [] } );
+				const labelIds = new Map( wrappers.map( ( w, i ) => [ w, ids.get( nodes[ i ] ) ] ) );
+				const anchors = new Map( wrappers.map( ( w, i ) => {
+
+					const node = nodes[ i ];
+					const p = toWorld( node.x0 < WIDTH / 2 ? node.x1 : node.x0, ( node.y0 + node.y1 ) / 2 );
+					p.y = NODE_THICK + LIFT;
+					return [ w, p ];
+
+				} ) );
+
+				labels = await hierarchyLabels( { descendants: () => wrappers }, labelIds, anchors, {
+					font: FONT,
+					fontSize,
+					color: 0x111111,
+					outlineWidth: 0.2, outlineColor: 0xffffff,
+					leafOffset: pad, internalOffset: pad,
+					orient: () => flat,
+					camera,
+					billboard: false
+				} );
+
+				scene.add( labels.group );
+
+				// refit with the label corners in the frame
+				const labelCorners = labels.labels.flatMap( l => {
+
+					const bb = l.object.textRenderInfo.blockBounds;
+					l.object.updateMatrixWorld( true );
+					return [ [ bb[ 0 ], bb[ 1 ] ], [ bb[ 2 ], bb[ 1 ] ], [ bb[ 0 ], bb[ 3 ] ], [ bb[ 2 ], bb[ 3 ] ] ]
+						.map( ( [ x, y ] ) => new THREE.Vector3( x, y, 0 ).applyMatrix4( l.object.matrixWorld ) );
+
+				} );
+
+				target = frame( boxCorners.concat( labelCorners ) );
+
+				// for the worker's verification script: the notebook layout and the
+				// world-space footprint of every node's mesh, read off its matrix
+				scene.updateMatrixWorld( true );
+				window.__sankey = {
+					S, SIDE, HEIGHT, NODE_THICK, LINK_THICK, LINK_STEP,
+					nodes: nodes.map( ( node, i ) => {
+
+						const b = new THREE.Box3().setFromObject( marks[ i ].object );
+						return {
+							name: node.name, category: node.category, value: node.value, depth: node.depth,
+							x0: node.x0, y0: node.y0, x1: node.x1, y1: node.y1,
+							box: [ b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z ]
+						};
+
+					} ),
+					links: links.map( ( link, i ) => ( {
+						source: link.source.name, target: link.target.name, value: link.value, width: link.width,
+						y0: link.y0, y1: link.y1, mid: [ ( link.source.x1 + link.target.x0 ) / 2, ( link.y0 + link.y1 ) / 2 ]
+					} ) )
+				};
+
+				/* ---------------- renderer ---------------- */
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'nodes:', nodes.length, 'links:', links.length, 'cells:', marks.length,
+					'labels:', labels.count, 'flipped:', labels.flipped,
+					'em px at 400x250:', ( fontSize * pxPerUnit ).toFixed( 2 ) );
+
+				const controls = attachOrbit( camera, renderer.domElement, target );
+				window.d33dev = { camera, controls, labels };
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: 0, links: 0, cells: nodes.length + links.length, labels: nodes.length },
+					labels,
+					planar: true
+				} );
+
+			}
+
+			function animate() {
+
+				labels.update( camera ); // per-frame mirror flip (plane fixed)
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
