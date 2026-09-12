@@ -54,6 +54,12 @@ const thenCells = ( process.env.REF_THEN || '' ).split( ',' ).map( s => s.trim()
 // evaluated in the page with `d3` in scope, e.g.
 //   REF_EXPRS='{"tile":"d3.treemapBinary"}' node tools/ref.js hierarchies/treemap.v2
 const extraExprs = JSON.parse( process.env.REF_EXPRS || '{}' );
+// A notebook that `require`s a library other than d3 (spike-map: topojson)
+// gets it from REF_MODULES, a JSON object of cell name -> ESM URL path on this
+// server; each is imported in the page and exposed as window[name] and as the
+// cell's value, exactly as d3 is, e.g.
+//   REF_MODULES='{"topojson":"/examples/jsm/vendor/topojson-client.js"}' node tools/ref.js dots/spike-map.v2
+const extraModules = JSON.parse( process.env.REF_MODULES || '{}' );
 
 /* The notebook's cell wiring: cell name -> { deps, fn } */
 
@@ -128,12 +134,23 @@ await page.evaluate( async url => {
 
 }, `http://localhost:${ port }/examples/jsm/vendor/d3.js` );
 
-const size = await page.evaluate( async ( script, cells, filesBase, extraValues, svgSize, thenCells, extra ) => {
+for ( const [ name, url ] of Object.entries( extraModules ) ) {
+
+	await page.evaluate( async ( name, url ) => {
+
+		window[ name ] = await import( url );
+
+	}, name, `http://localhost:${ port }${ url }` );
+
+}
+
+const size = await page.evaluate( async ( script, cells, filesBase, extraValues, svgSize, thenCells, extra, moduleNames ) => {
 
 	eval( script ); // eslint-disable-line no-eval
 
 	const values = {
 		d3: window.d3,
+		...Object.fromEntries( moduleNames.map( name => [ name, window[ name ] ] ) ),
 		width: 928,
 		// Observable's `invalidation` resolves when the cell is re-run; here it
 		// never is, so a promise that never settles. Passed to the cell as-is
@@ -189,7 +206,7 @@ const size = await page.evaluate( async ( script, cells, filesBase, extraValues,
 	const rect = node.getBoundingClientRect();
 	return { width: Math.ceil( rect.width ), height: Math.ceil( rect.height ) };
 
-}, script, Object.fromEntries( cells ), `http://localhost:${ port }/gallery/${ target }/files/`, extraValues, svgSize, thenCells, extraExprs );
+}, script, Object.fromEntries( cells ), `http://localhost:${ port }/gallery/${ target }/files/`, extraValues, svgSize, thenCells, extraExprs, Object.keys( extraModules ) );
 
 await page.setViewport( { width: size.width, height: size.height } );
 
