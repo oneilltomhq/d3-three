@@ -23,14 +23,14 @@
 		},
 		"angle": {
 			"a": {
-				"width": 0.51445103492414,
-				"height": 0.8500340951722692,
-				"area": 0.43730091998217885
+				"width": 0.5144663901196989,
+				"height": 0.8500340951722691,
+				"area": 0.43731397242194187
 			},
 			"b": {
-				"width": 0.6504898223225618,
-				"height": 0.8728238522008561,
-				"area": 0.5677630325370289
+				"width": 0.6707752398115149,
+				"height": 0.89970709742439,
+				"area": 0.6035012440349672
 			},
 			"threshold": 0.01,
 			"pass": true
@@ -43,8 +43,8 @@
 			"candidates": 252,
 			"eligibleA": 252,
 			"eligibleB": 252,
-			"visibleA": 221,
-			"visibleB": 225,
+			"visibleA": 217,
+			"visibleB": 224,
 			"hitA": 20,
 			"hitB": 20,
 			"pickables": 252,
@@ -52,8 +52,8 @@
 			"pass": true
 		},
 		"labels": {
-			"count": 252,
-			"expectedNodes": 252,
+			"count": 32,
+			"expectedNodes": 32,
 			"pass": true
 		},
 		"pass": true
@@ -63,13 +63,13 @@
 		"links": 251,
 		"cells": 0,
 		"extensions": 0,
-		"labels": 252
+		"labels": 32
 	},
 	"planar": false,
 	"target": {
-		"x": 2.099046025356976,
-		"y": 0.6234203995912403,
-		"z": -1.673692132169005
+		"x": 1.359176710296852,
+		"y": 0.623420399591247,
+		"z": -1.155630060473854
 	},
 	"env": {
 		"backend": "WebGPUBackend",

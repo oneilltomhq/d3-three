@@ -140,24 +140,26 @@
 				const view = { elevation: 15, azimuth: 35, fill: 0.85 };
 				let target = frameCamera( camera, box, { ...view, points: nodePoints } );
 
-				/* ---------------- labels: one Text per node (src/labels.js) ----------------
-				   Planar, as d3_force: every label lies in the plane facing camera
-				   A's initial direction (quaternion copied from the camera once, at
-				   layout time). Leaves hang to the right (+x, anchor start),
-				   internal nodes sit to the left (-x, anchor end), offset by
-				   NODE_R + 0.1. Em size capped at LABEL_PX at the target distance
-				   and at 0.45 of the closest two nodes — smaller than d3_force's
-				   8 px / 0.6: three times the nodes, names up to 22 characters,
-				   and the notebook itself draws no text (tooltips only), so at
-				   force's size the labels buried the tree. The camera is then
-				   refitted to the labels' far ends so no name is clipped. */
+				/* ---------------- labels: one Text per INTERNAL node (src/labels.js) ----------------
+				   The notebook draws no text (names are <title> tooltips), and all
+				   252 names buried the tree, so only the internal nodes — the
+				   white hubs, 32 — are labelled; leaves keep their name on
+				   mesh.name. Planar, as d3_force: every label lies in the plane
+				   facing camera A's initial direction (quaternion copied from the
+				   camera once, at layout time), offset +x (camera right) by
+				   NODE_R + 0.1, anchor start. Em size capped at LABEL_PX at the
+				   target distance and at 0.6 of the closest two internal nodes.
+				   The camera is then refitted to the labels' far ends so no name
+				   is clipped. */
 
-				const LABEL_PX = 6;
-				const PITCH_FRACTION = 0.45;
+				const labelled = nodes.filter( d => d.children );
+				const labelPoints = labelled.map( n => position.get( n ) );
+
+				const LABEL_PX = 8;
 				let pitch = Infinity;
-				for ( let i = 0; i < nodes.length; i ++ ) for ( let j = i + 1; j < nodes.length; j ++ ) {
+				for ( let i = 0; i < labelled.length; i ++ ) for ( let j = i + 1; j < labelled.length; j ++ ) {
 
-					pitch = Math.min( pitch, nodePoints[ i ].distanceTo( nodePoints[ j ] ) );
+					pitch = Math.min( pitch, labelPoints[ i ].distanceTo( labelPoints[ j ] ) );
 
 				}
 
@@ -167,7 +169,7 @@
 				const fit = () => {
 
 					pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
-					fontSize = Math.min( LABEL_PX / pxPerUnit, PITCH_FRACTION * pitch );
+					fontSize = Math.min( LABEL_PX / pxPerUnit, 0.6 * pitch );
 
 				};
 
@@ -177,19 +179,25 @@
 
 				for ( let i = 0; i < 3; i ++ ) {
 
-					// far end of each label: ~0.5 em per glyph of Roboto, along camera
-					// right for leaves and camera left for internal nodes
+					// far end of each label: ~0.5 em per glyph of Roboto, along camera right
 					right.setFromMatrixColumn( camera.matrixWorld, 0 ).normalize();
-					const tips = nodes.map( ( n, k ) => nodePoints[ k ].clone()
-						.addScaledVector( right, ( n.children ? - 1 : 1 ) * ( offset + 0.5 * fontSize * n.data.name.length ) ) );
+					const tips = labelled.map( ( n, k ) => labelPoints[ k ].clone()
+						.addScaledVector( right, offset + 0.5 * fontSize * n.data.name.length ) );
 					target = frameCamera( camera, box, { ...view, points: nodePoints.concat( tips ) } );
 					fit();
 
 				}
 
+				// hierarchyLabels reads `root.descendants()` and `node.children`;
+				// give it childless wrappers `{ data }` over the internal nodes
+				// only (as d3_force does over its graph), so every label is a
+				// "leaf": anchored start, offset outward along +x.
+				const wrappers = labelled.map( n => ( { data: n.data } ) );
+				const labelIds = new Map( wrappers.map( ( w, i ) => [ w, ids.get( labelled[ i ] ) ] ) );
+				const labelPositions = new Map( wrappers.map( ( w, i ) => [ w, labelPoints[ i ] ] ) );
 				const facing = camera.quaternion.clone();
 
-				labels = await hierarchyLabels( root, ids, position, {
+				labels = await hierarchyLabels( { descendants: () => wrappers }, labelIds, labelPositions, {
 					font: '/examples/fonts/Roboto-Regular.ttf',
 					fontSize,
 					color: 0x333333,
@@ -215,7 +223,7 @@
 					'ticks:', ticks, 'scale:', scale.toFixed( 5 ),
 					'extent:', extent.map( e => e.toFixed( 3 ) ).join( ' x ' ),
 					'pitch:', pitch.toFixed( 3 ), 'fontSize:', fontSize.toFixed( 3 ), 'px:', ( fontSize * pxPerUnit ).toFixed( 2 ),
-					'labels:', labels.count, 'flipped:', labels.flipped,
+					'labels:', labels.count, 'of', labelled.length, 'flipped:', labels.flipped,
 					'nodes:', nodes.length, 'links:', links.length );
 
 				const controls = attachOrbit( camera, renderer.domElement, target );
@@ -225,7 +233,7 @@
 
 				register( {
 					renderer, scene, camera, marks, target,
-					expected: { nodes: root.descendants().length, links: root.links().length, labels: root.descendants().length },
+					expected: { nodes: root.descendants().length, links: root.links().length, labels: labelled.length },
 					pickables: nodeGroup.children,
 					labels
 				} );

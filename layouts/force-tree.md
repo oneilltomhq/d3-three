@@ -38,7 +38,7 @@ Proof that the layout itself is deterministic, not only the harness render:
 processes with NO deterministic injection (real `Math.random`, real clocks,
 free-running RAF), reads `window.d33.report().marks` from each and compares every
 position with `===`; it also compares against the harness's
-`marks/d3_force-tree.json`. All three agree: 503/503 marks and 252/252 labels,
+`marks/d3_force-tree.json`. All three agree: 503/503 marks and 32/32 labels,
 0 differ, max |Δ| 0.
 
 ## Marks
@@ -56,23 +56,26 @@ position with `===`; it also compares against the harness's
 - link: fat line (`Line2`) per `root.links()` entry (251), straight, two points,
   `#999` opacity 0.6, linewidth 1.5 px (the notebook's default stroke-width). One
   shared `Line2NodeMaterial`. `a`, `b` = node ids. `expected.links = 251`.
-- labels: all 252, `data.name`, planar as d3_force: every label lies in the plane
-  facing camera A's initial direction (its quaternion is camera A's, copied once
-  at layout time, not a per-frame billboard). Real hierarchy fed to
-  `hierarchyLabels`, so leaves hang right (+x, anchor start) and internal nodes
-  sit left (−x, anchor end), offset node radius + 0.1 (0.3). Font size
-  `min(6 px at target distance, 0.45 · closest pair 0.782)` = **0.352** world
-  units = 4.3 px at 400×250, 17 px at 1600×1000. This is smaller than
-  d3_force's `min(8 px, 0.6 · pitch)`: three times the nodes, names up to 22
-  characters, and the notebook draws no text at all, so at force's size the
-  labels buried the tree in the eyeball render; at this size the fans read.
-  No label is mirror-flipped at layout time. `expected.labels = 252`.
+- labels: **internal nodes only** — the 32 white hubs
+  (`root.descendants().filter(d => d.children)`), `data.name`. The notebook
+  draws no text (names are `<title>` tooltips), and a first pass with all 252
+  names was a wall of text that buried the tree; the hubs name the fans and
+  the leaves keep their name on `mesh.name`. Planar as d3_force: every label
+  lies in the plane facing camera A's initial direction (its quaternion is
+  camera A's, copied once at layout time, not a per-frame billboard), offset
+  +x (camera right) by node radius + 0.1 (0.3), anchor start. `hierarchyLabels`
+  is fed a shim `{ descendants: () => wrappers }` of childless `{ data }`
+  wrappers over the internal nodes, as d3_force does over its graph, so no
+  primitive changed. Font size `min(8 px at target distance, 0.6 · closest pair
+  of internal nodes 1.163)` = **0.658** world units = 8.0 px at 400×250, 32 px
+  at 1600×1000 — d3_force's rule. No label is mirror-flipped at layout time.
+  `expected.labels = 32` (the labels gate reads it).
 
 ## Camera
 
 fov 40, **elevation 15°, azimuth 35°**, fill 0.85 (d3_force's pair), refitted
 (3 iterations) to the nodes plus the far ends of the labels so no name is clipped.
-Angle areas 0.437 / 0.568. Picking 20/20 from both cameras at the first try
+Angle areas 0.437 / 0.604. Picking 20/20 from both cameras at the first try
 (visible 221 / 225 of 252 after the occlusion pre-pass).
 
 Depth gate: 0.829 — the tree with `forceX/Y/Z` is nearly isotropic. If below 0.25
