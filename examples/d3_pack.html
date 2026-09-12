@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - circle packing as sphere packing</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 circle packing (flare-2.json) lifted to nested sphere packing</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d33": "/src/d33.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import { register } from 'd33';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+			import { paddedPack3 } from '/src/pack3.js';
+
+			let renderer, scene, camera;
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data + d3 layout ---------------- */
+
+				const data = await fetch( '/gallery/hierarchies/pack.v2/files/flare-2.json' ).then( r => r.json() );
+
+				// d3 decides the hierarchy, the value sums and the packing order
+				// (descending value), exactly as the notebook's pack() call.
+				const root = d3.hierarchy( data )
+					.sum( d => d.value )
+					.sort( ( a, b ) => b.value - a.value );
+
+				// The 3D packer (src/pack3.js, layouts/pack.md): leaf volume
+				// proportional to value, every internal node a sphere enclosing its
+				// children. Padding 0.0065 of the unpadded root radius (the
+				// notebook's 3 px against a 463 px root); root scaled to R = 10.
+				const R = 10;
+				paddedPack3( root, { paddingFraction: 0.0065, radius: R } );
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.2 ) );
+
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.8 );
+				sun.position.set( 1, 2, 1.5 ).normalize();
+				scene.add( sun );
+
+				camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				/* ---------------- marks: one Object3D per datum ---------------- */
+
+				// Colour by depth: the zoomable circle packing's ramp (pack.v2 itself
+				// draws #fff / #ddd, which has no depth to it in 3D).
+				const color = d3.scaleLinear()
+					.domain( [ 0, 5 ] )
+					.range( [ 'hsl(152,80%,80%)', 'hsl(228,30%,40%)' ] )
+					.interpolate( d3.interpolateHcl );
+
+				const leafMaterials = new Map();
+				const shellMaterials = new Map();
+
+				const materialFor = node => {
+
+					const leaf = ! node.children;
+					const pool = leaf ? leafMaterials : shellMaterials;
+
+					if ( ! pool.has( node.depth ) ) {
+
+						const c = new THREE.Color( color( node.depth ) );
+
+						pool.set( node.depth, leaf
+							? new THREE.MeshStandardNodeMaterial( { color: c, roughness: 0.6, metalness: 0.0 } )
+							: new THREE.MeshStandardNodeMaterial( {
+								color: c, roughness: 0.35, metalness: 0.0,
+								transparent: true, opacity: 0.25, depthWrite: false, side: THREE.FrontSide
+							} ) );
+
+					}
+
+					return pool.get( node.depth );
+
+				};
+
+				// Object3D nesting mirrors the hierarchy: each node's mesh is a child
+				// of its parent's mesh and positioned in the parent's local frame
+				// (pack3 gives local x/y/z), so world(n) = world(parent) + local(n).
+				const nodes = new THREE.Group();
+				nodes.name = 'nodes';
+				scene.add( nodes );
+
+				const ids = new Map();
+				root.each( ( node, i ) => ids.set( node, 'n' + i ) );
+
+				const meshes = new Map();
+				const marks = [];
+				const leaves = [];
+
+				for ( const node of root.descendants() ) {
+
+					const mesh = new THREE.Mesh( new THREE.SphereGeometry( node.r, 24, 16 ), materialFor( node ) );
+					mesh.position.set( node.x, node.y, node.z );
+					mesh.name = node.data.name;
+
+					// Translucent shells blend back to front: deeper (inner) shells
+					// first, the root's shell last, so an outer shell's front face is
+					// composited over everything it contains. Opaque leaves render in
+					// the opaque pass before any of this.
+					mesh.renderOrder = - node.depth;
+
+					( node.parent ? meshes.get( node.parent ) : nodes ).add( mesh );
+					meshes.set( node, mesh );
+
+					marks.push( { id: ids.get( node ), kind: 'node', object: mesh } );
+					if ( ! node.children ) leaves.push( mesh );
+
+				}
+
+				/* ---------------- camera + renderer ---------------- */
+
+				// Frame the root sphere: fit the projection of points on its surface
+				// (a box fit leaves the corners empty).
+				const ringPoints = [];
+
+				for ( let i = 0; i < 12; i ++ ) {
+
+					const phi = Math.PI * ( i + 0.5 ) / 12;
+
+					for ( let j = 0; j < 24; j ++ ) {
+
+						const theta = 2 * Math.PI * j / 24;
+						ringPoints.push( new THREE.Vector3(
+							R * Math.sin( phi ) * Math.cos( theta ),
+							R * Math.cos( phi ),
+							R * Math.sin( phi ) * Math.sin( theta )
+						) );
+
+					}
+
+				}
+
+				const box = new THREE.Box3( new THREE.Vector3( - R, - R, - R ), new THREE.Vector3( R, R, R ) );
+
+				const target = frameCamera( camera, box, {
+					elevation: 20, azimuth: 40, fill: 0.85, points: ringPoints
+				} );
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'R(root):', root.r.toFixed( 3 ),
+					'nodes:', root.descendants().length, 'leaves:', leaves.length );
+
+				attachOrbit( camera, renderer.domElement, target );
+
+				// pickables = leaf meshes only: the containers are translucent
+				// shells, the leaves are the notebook's interactive targets.
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: root.descendants().length, links: 0 },
+					pickables: leaves
+				} );
+
+			}
+
+			function animate() {
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

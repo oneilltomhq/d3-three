@@ -235,23 +235,29 @@ function angleGate( positions, cameraA, cameraB ) {
 
 }
 
-function hits( raycaster, camera, ndc, object, pickables ) {
+// 'hit'      the first pickable along the ray is `object`
+// 'occluded' another pickable is hit first, nearer the camera than `p` (a
+//            sphere packing: leaves inside the ball are hidden by leaves in
+//            front of them — the pixel legitimately belongs to the front one)
+// 'miss'     nothing, or the first hit is behind `p` (the mark is not where a
+//            mesh is)
+function hits( raycaster, camera, ndc, object, pickables, p ) {
 
 	raycaster.setFromCamera( new THREE.Vector2( ndc.x, ndc.y ), camera );
 
 	const intersections = raycaster.intersectObjects( pickables, true );
-	if ( intersections.length === 0 ) return false;
+	if ( intersections.length === 0 ) return 'miss';
 
 	let hit = intersections[ 0 ].object;
 
 	while ( hit ) {
 
-		if ( hit === object ) return true;
+		if ( hit === object ) return 'hit';
 		hit = hit.parent;
 
 	}
 
-	return false;
+	return intersections[ 0 ].distance < raycaster.ray.origin.distanceTo( p ) ? 'occluded' : 'miss';
 
 }
 
@@ -270,15 +276,22 @@ function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 
 	}
 
-	const step = Math.max( 1, Math.floor( nodeMarks.length / PICK_SAMPLES ) );
+	// Samples are drawn from the pickable node marks, so a page that passes
+	// leaves only (pack: containers are translucent, leaves are the targets)
+	// gets leaves sampled. Falls back to every node mark if none is pickable.
+	const pickableSet = new Set( pickables );
+	const candidates = nodeMarks.filter( m => pickableSet.has( m.object ) );
+	const samples = candidates.length > 0 ? candidates : nodeMarks;
+
+	const step = Math.max( 1, Math.floor( samples.length / PICK_SAMPLES ) );
 	const raycaster = new THREE.Raycaster();
 
 	const misses = [];
-	let sampled = 0, hitA = 0, hitB = 0;
+	let sampled = 0, hitA = 0, hitB = 0, occludedA = 0, occludedB = 0;
 
-	for ( let i = 0; i < nodeMarks.length && sampled < PICK_SAMPLES; i += step ) {
+	for ( let i = 0; i < samples.length && sampled < PICK_SAMPLES; i += step ) {
 
-		const mark = nodeMarks[ i ];
+		const mark = samples[ i ];
 		const p = positions.get( mark.id );
 
 		sampled ++;
@@ -286,16 +299,21 @@ function pickingGate( nodeMarks, positions, cameraA, cameraB ) {
 		const ndcA = p.clone().project( cameraA );
 		const ndcB = p.clone().project( cameraB );
 
-		const okA = hits( raycaster, cameraA, ndcA, mark.object, pickables );
-		const okB = hits( raycaster, cameraB, ndcB, mark.object, pickables );
+		const okA = hits( raycaster, cameraA, ndcA, mark.object, pickables, p );
+		const okB = hits( raycaster, cameraB, ndcB, mark.object, pickables, p );
 
-		if ( okA ) hitA ++;
-		if ( okB ) hitB ++;
-		if ( ! okA || ! okB ) misses.push( { id: mark.id, a: okA, b: okB } );
+		if ( okA === 'hit' ) hitA ++; else if ( okA === 'occluded' ) occludedA ++;
+		if ( okB === 'hit' ) hitB ++; else if ( okB === 'occluded' ) occludedB ++;
+		if ( okA === 'miss' || okB === 'miss' ) misses.push( { id: mark.id, a: okA, b: okB } );
 
 	}
 
-	return { sampled, hitA, hitB, pickables: pickables.length, misses, pass: sampled > 0 && hitA === sampled && hitB === sampled };
+	// Every sample is either hit or occluded by a nearer pickable, and each
+	// camera actually hits something: a page where no pickable is ever the
+	// first hit still fails.
+	const pass = sampled > 0 && misses.length === 0 && hitA > 0 && hitB > 0;
+
+	return { sampled, sampleSet: candidates.length > 0 ? 'pickables' : 'nodes', candidates: samples.length, hitA, hitB, occludedA, occludedB, pickables: pickables.length, misses, pass };
 
 }
 
