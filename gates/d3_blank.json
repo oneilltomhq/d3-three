@@ -41,6 +41,12 @@
 			"pass": false,
 			"note": "no node marks"
 		},
+		"labels": {
+			"count": 0,
+			"expectedNodes": 0,
+			"pass": true,
+			"note": "no labels registered"
+		},
 		"pass": false
 	},
 	"expected": {

@@ -39,6 +39,11 @@
 			"misses": [],
 			"pass": true
 		},
+		"labels": {
+			"count": 252,
+			"expectedNodes": 252,
+			"pass": true
+		},
 		"pass": true
 	},
 	"expected": {
