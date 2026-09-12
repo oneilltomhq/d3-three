@@ -269,7 +269,8 @@
 					'facing:', facing.toArray().map( v => v.toFixed( 4 ) ).join( ',' ),
 					'nodes:', root.descendants().length, 'leaves:', leaves.length );
 
-				attachOrbit( camera, renderer.domElement, target );
+				const controls = attachOrbit( camera, renderer.domElement, target );
+				window.d33dev = { camera, controls, labels };
 
 				// pickables = leaf meshes only: the containers are translucent
 				// shells, the leaves are the notebook's interactive targets.

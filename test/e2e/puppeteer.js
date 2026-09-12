@@ -569,7 +569,12 @@ async function renderOnce( page, cleanPage, file ) {
 
 	} catch ( e ) {
 
-		if ( e.includes && e.includes( 'Render timeout exceeded' ) === false ) {
+		// Only the page's own 'Render timeout exceeded' string is tolerated
+		// (three's harness keeps the partial frame). Anything else — notably a
+		// puppeteer TimeoutError object from waitForNetworkIdle, which
+		// `e.includes` used to skip silently and cost a 300 s run with no
+		// message — fails loudly.
+		if ( typeof e !== 'string' || e.includes( 'Render timeout exceeded' ) === false ) {
 
 			throw new Error( `Error happened while rendering file ${ file }: ${ e }` );
 
