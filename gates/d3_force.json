@@ -1,0 +1,71 @@
+{
+	"file": "d3_force",
+	"gates": {
+		"depth": {
+			"extents": [
+				20,
+				15.966267665908578,
+				11.953210617735689
+			],
+			"ratio": 0.5976605308867844,
+			"pass": true
+		},
+		"counts": {
+			"nodes": 77,
+			"links": 254,
+			"expectedNodes": 77,
+			"expectedLinks": 254,
+			"pass": true
+		},
+		"angle": {
+			"a": {
+				"width": 0.5477295059572904,
+				"height": 0.850009252415906,
+				"area": 0.46557514788488996
+			},
+			"b": {
+				"width": 0.5546694809638507,
+				"height": 0.7972120913472671,
+				"area": 0.4421892169256946
+			},
+			"threshold": 0.01,
+			"pass": true
+		},
+		"picking": {
+			"sampled": 20,
+			"sampledA": 20,
+			"sampledB": 20,
+			"hitA": 20,
+			"hitB": 20,
+			"pickables": 77,
+			"misses": [],
+			"pass": true
+		},
+		"labels": {
+			"count": 77,
+			"expectedNodes": 77,
+			"pass": true
+		},
+		"pass": true
+	},
+	"expected": {
+		"nodes": 77,
+		"links": 254
+	},
+	"target": {
+		"x": 1.9026635394790703,
+		"y": 0.14156921587022894,
+		"z": -1.3785674313920324
+	},
+	"env": {
+		"backend": "WebGPUBackend",
+		"isWebGPUBackend": true,
+		"hasNavigatorGPU": true,
+		"adapterInfo": {
+			"vendor": "google",
+			"architecture": "swiftshader",
+			"device": "",
+			"description": ""
+		}
+	}
+}

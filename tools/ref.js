@@ -34,6 +34,11 @@ if ( ! target ) {
 const slug = path.basename( target ).replace( /\.v\d+$/, '' );
 const outFile = process.argv[ 3 ] || `ref/${ slug }.png`;
 
+// Notebooks whose chart animates itself (a force simulation on d3-timer) are
+// not finished when the cell returns: REF_SETTLE_MS waits that long before the
+// screenshot. Default 0, so the static notebooks are unchanged.
+const settleMs = Number( process.env.REF_SETTLE_MS ) || 0;
+
 /* The notebook's cell wiring: cell name -> { deps, fn } */
 
 function cellDefinitions( source ) {
@@ -110,6 +115,10 @@ const size = await page.evaluate( async ( script, cells, filesBase ) => {
 	const values = {
 		d3: window.d3,
 		width: 928,
+		// Observable's `invalidation` resolves when the cell is re-run; here it
+		// never is, so a promise that never settles. Passed to the cell as-is
+		// (see `call`): awaiting it would never return.
+		invalidation: new Promise( () => {} ),
 		FileAttachment: name => ( {
 			json: () => fetch( filesBase + name ).then( r => r.json() ),
 			text: () => fetch( filesBase + name ).then( r => r.text() ),
@@ -127,7 +136,7 @@ const size = await page.evaluate( async ( script, cells, filesBase ) => {
 		if ( ! cell ) throw new Error( `no value for cell "${ name }"` );
 
 		const args = [];
-		for ( const dep of cell.deps ) args.push( await call( dep ) );
+		for ( const dep of cell.deps ) args.push( dep === 'invalidation' ? values.invalidation : await call( dep ) );
 
 		values[ name ] = await eval( cell.fn )( ...args ); // eslint-disable-line no-eval
 		return values[ name ];
@@ -144,6 +153,8 @@ const size = await page.evaluate( async ( script, cells, filesBase ) => {
 }, script, Object.fromEntries( cells ), `http://localhost:${ port }/gallery/${ target }/files/` );
 
 await page.setViewport( { width: size.width, height: size.height } );
+
+if ( settleMs > 0 ) await new Promise( resolve => setTimeout( resolve, settleMs ) );
 
 await fs.mkdir( path.dirname( outFile ), { recursive: true } );
 
