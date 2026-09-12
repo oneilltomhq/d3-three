@@ -1,4 +1,4 @@
-// topojson-client 3.1.0 (ISC, Mike Bostock) — src/index.js bundled with esbuild as ESM for d3_spikes.html and tools/ref.js
+// topojson-client 3.1.0 (ISC, Mike Bostock) — src/index.js bundled with esbuild as ESM for d3_spikes.html, d3_globe.html and tools/ref.js
 
 // ../../../archive/buildx-reloaded/node_modules/.pnpm/topojson-client@3.1.0/node_modules/topojson-client/src/identity.js
 function identity_default(x) {

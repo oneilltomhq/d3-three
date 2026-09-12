@@ -68,6 +68,15 @@ const extraModules = JSON.parse( process.env.REF_MODULES || '{}' );
 //   REF_MERGE=/examples/jsm/vendor/d3-sankey.js node tools/ref.js networks/sankey.v2
 const mergeModules = ( process.env.REF_MERGE || '' ).split( ',' ).map( s => s.trim() ).filter( Boolean );
 
+// A cell the notebook imports from another notebook (`main.define("Legend",
+// ["module 1", "@variable"], ...)` is not a `main.variable(...)` line, so it
+// is invisible to cellDefinitions): REF_IMPORTS names the notebook directory
+// it comes from, relative to the d3-gallery root (the parent of GALLERY_DIR),
+// and that notebook's cell of the same name is evaluated with the same
+// machinery, e.g.
+//   REF_IMPORTS='{"Legend":"deps/color-legend"}' node tools/ref.js maps/world-choropleth.v2
+const imports = JSON.parse( process.env.REF_IMPORTS || '{}' );
+
 /* The notebook's cell wiring: cell name -> { deps, fn } */
 
 function cellDefinitions( source ) {
@@ -104,6 +113,32 @@ if ( ! cells.has( 'chart' ) ) {
 // The notebook is an ES module; strip the export so it can be eval'd as a
 // classic script and leave every cell function as a global.
 const script = source.replace( /export\s+default\s+function\s+define/, 'function define' );
+
+// Imported notebooks (REF_IMPORTS): each is eval'd inside its own function
+// scope in the page so its cell functions never collide with the main
+// notebook's, and only the named cell (with the cells it depends on) is
+// exposed.
+const importedNotebooks = {};
+
+for ( const [ name, dir ] of Object.entries( imports ) ) {
+
+	const depPath = path.join( GALLERY_DIR, '..', dir, 'notebook.js' );
+	const depSource = await fs.readFile( depPath, 'utf8' );
+	const depCells = cellDefinitions( depSource );
+
+	if ( ! depCells.has( name ) ) {
+
+		console.error( `No "${ name }" cell in ${ depPath }. Cells: ${ [ ...depCells.keys() ].join( ', ' ) }` );
+		process.exit( 1 );
+
+	}
+
+	importedNotebooks[ name ] = {
+		script: depSource.replace( /export\s+default\s+function\s+define/, 'function define' ),
+		cells: Object.fromEntries( depCells )
+	};
+
+}
 
 // An ephemeral port: a static server for this repo may already be running on a
 // fixed one, and this tool must not collide with it.
@@ -154,7 +189,7 @@ for ( const [ name, url ] of Object.entries( extraModules ) ) {
 
 }
 
-const size = await page.evaluate( async ( script, cells, filesBase, extraValues, svgSize, thenCells, extra, moduleNames ) => {
+const size = await page.evaluate( async ( script, cells, filesBase, extraValues, svgSize, thenCells, extra, moduleNames, importedNotebooks ) => {
 
 	eval( script ); // eslint-disable-line no-eval
 
@@ -183,6 +218,20 @@ const size = await page.evaluate( async ( script, cells, filesBase, extraValues,
 
 	}
 
+	// REF_IMPORTS: the imported notebook's cell functions, scoped
+	for ( const [ name, dep ] of Object.entries( importedNotebooks ) ) {
+
+		const fnNames = [ ...new Set( Object.values( dep.cells ).map( c => c.fn ) ) ];
+		const fns = new Function( dep.script + '\nreturn { ' + fnNames.join( ', ' ) + ' };' )(); // eslint-disable-line no-new-func
+
+		for ( const [ cellName, cell ] of Object.entries( dep.cells ) ) {
+
+			if ( cellName === name || ! ( cellName in cells ) ) cells[ cellName ] = { deps: cell.deps, fn: fns[ cell.fn ] };
+
+		}
+
+	}
+
 	const call = async name => {
 
 		if ( name in values ) return values[ name ];
@@ -193,7 +242,8 @@ const size = await page.evaluate( async ( script, cells, filesBase, extraValues,
 		const args = [];
 		for ( const dep of cell.deps ) args.push( dep === 'invalidation' ? values.invalidation : await call( dep ) );
 
-		values[ name ] = await eval( cell.fn )( ...args ); // eslint-disable-line no-eval
+		const fn = typeof cell.fn === 'function' ? cell.fn : eval( cell.fn ); // eslint-disable-line no-eval
+		values[ name ] = await fn( ...args );
 		return values[ name ];
 
 	};
@@ -216,7 +266,7 @@ const size = await page.evaluate( async ( script, cells, filesBase, extraValues,
 	const rect = node.getBoundingClientRect();
 	return { width: Math.ceil( rect.width ), height: Math.ceil( rect.height ) };
 
-}, script, Object.fromEntries( cells ), `http://localhost:${ port }/gallery/${ target }/files/`, extraValues, svgSize, thenCells, extraExprs, Object.keys( extraModules ) );
+}, script, Object.fromEntries( cells ), `http://localhost:${ port }/gallery/${ target }/files/`, extraValues, svgSize, thenCells, extraExprs, Object.keys( extraModules ), importedNotebooks );
 
 await page.setViewport( { width: size.width, height: size.height } );
 
