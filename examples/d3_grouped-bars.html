@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - grouped bar chart as a bar matrix</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 grouped bar chart (US population by state and age): the inner band pulled apart into depth, state x age x population</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import { register } from 'd33';
+			import { fatLine, lineMaterial } from '/src/link.js';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
+			import { VectorFont } from 'lib3/sdf-text';
+
+			let renderer, scene, camera, labels;
+
+			/* ---------------- layouts/grouped-bars.md ----------------
+			   3D lift (obvious win): the notebook's grouped bars, with the
+			   inner (age) band turned into the depth axis. x = state (the
+			   notebook's fx band), z = age (the notebook's inner x band, given
+			   a range that makes every bar square in plan), y = population on
+			   the notebook's linear scale. One Mesh(BoxGeometry) per datum. */
+
+			const WIDTH = 928, HEIGHT = 600;                 // the notebook's size
+			const MARGIN = { top: 10, right: 10, bottom: 20, left: 40 };
+			const SIDE = 20;                                 // world units of the notebook's width
+			const S = SIDE / WIDTH;                          // notebook px -> world units
+			const FONT = '/examples/fonts/Roboto-Regular.ttf';
+			const LABEL_PX = 6;                              // label em at the target distance, 400x250
+			const TICK_PX = 6;                               // d3.axis default tickSize
+			const TICK_PAD_PX = 3;                           // d3.axis default tickPadding
+			const UP = [ 0, 1, 0 ];
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data (the notebook's data cell) ---------------- */
+
+				const csv = await fetch( '/gallery/bars/grouped-bar-chart.v2/files/us-population-state-age.csv' ).then( r => r.text() );
+				let table = d3.csvParse( csv, d3.autoType );
+				const ages = table.columns.slice( 1 );
+				table = d3.sort( table, d => - d3.sum( ages, age => d[ age ] ) ).slice( 0, 6 );
+				const data = ages.flatMap( age => table.map( d => ( { state: d.name, age, population: d[ age ] } ) ) );
+
+				/* ---------------- scales (the notebook's chart cell) ---------------- */
+
+				// Fx encodes the state.
+				const fx = d3.scaleBand()
+					.domain( new Set( data.map( d => d.state ) ) )
+					.rangeRound( [ MARGIN.left, WIDTH - MARGIN.right ] )
+					.paddingInner( 0.1 );
+
+				// The notebook's inner band: x within a state group, by age.
+				const ageSet = new Set( data.map( d => d.age ) );
+
+				const x = d3.scaleBand()
+					.domain( ageSet )
+					.rangeRound( [ 0, fx.bandwidth() ] )
+					.padding( 0.05 );
+
+				const color = d3.scaleOrdinal()
+					.domain( ageSet )
+					.range( d3.schemeSpectral[ ageSet.size ] )
+					.unknown( '#ccc' );
+
+				// Y encodes the height of the bar.
+				const y = d3.scaleLinear()
+					.domain( [ 0, d3.max( data, d => d.population ) ] ).nice()
+					.rangeRound( [ HEIGHT - MARGIN.bottom, MARGIN.top ] );
+
+				// The lift: the inner band becomes the depth axis. Same domain and
+				// padding (0.05) as the notebook's `x`, but its range is chosen so
+				// the bandwidth equals the state bandwidth — every bar is square
+				// in plan — instead of dividing the state band nine ways.
+				const zRange = fx.bandwidth() / ( 1 - 0.05 ) * ( ageSet.size - 0.05 + 2 * 0.05 );
+				const z = d3.scaleBand()
+					.domain( ageSet )
+					.range( [ 0, zRange ] )
+					.padding( 0.05 );
+
+				const DEPTH = zRange * S;                        // world depth of the matrix
+				const X0 = MARGIN.left * S;                      // the notebook's y axis line
+				const ZFRONT = 0;                                // near edge (last age)
+
+				// notebook px -> world. x -> x; the depth band runs from the far
+				// edge z = -DEPTH (first age, "<10") to the near edge z = 0 (last
+				// age, ">=80"), so the small old-age bars sit in front of the tall
+				// young ones and no row hides the one behind it. Population -> y.
+				const worldX = px => px * S;
+				const worldZ = px => px * S - DEPTH;
+				const worldY = pop => ( y( 0 ) - y( pop ) ) * S;
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.0 ) );
+
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.6 );
+				sun.position.set( 1.2, 2, 1 ).normalize();
+				scene.add( sun );
+
+				camera = new THREE.PerspectiveCamera( 35, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				/* ---------------- marks: one Mesh(BoxGeometry) per datum ----------------
+				   A unit box hanging below its origin, scaled to (width, height,
+				   depth) and placed at the centre of its top face, so the mark
+				   position is the bar's own top and the footprint in plan is the
+				   notebook's band × the depth band. */
+
+				const unitBox = new THREE.BoxGeometry( 1, 1, 1 ).translate( 0, - 0.5, 0 );
+				const materials = new Map(); // age -> material
+
+				const material = age => {
+
+					if ( ! materials.has( age ) ) {
+
+						materials.set( age, new THREE.MeshStandardNodeMaterial( {
+							color: new THREE.Color( color( age ) ), roughness: 0.8, metalness: 0
+						} ) );
+
+					}
+
+					return materials.get( age );
+
+				};
+
+				const cells = new THREE.Group();
+				cells.name = 'cells';
+				scene.add( cells );
+
+				const ids = new Map();
+				data.forEach( ( d, i ) => ids.set( d, 'c' + i ) );
+
+				const marks = [];
+				const barW = fx.bandwidth() * S;
+				const barD = z.bandwidth() * S;
+
+				for ( const d of data ) {
+
+					const h = worldY( d.population );
+					const mesh = new THREE.Mesh( unitBox, material( d.age ) );
+					mesh.scale.set( barW, h, barD );
+					mesh.position.set(
+						worldX( fx( d.state ) + fx.bandwidth() / 2 ),
+						h,
+						worldZ( z( d.age ) + z.bandwidth() / 2 )
+					);
+					mesh.name = d.state + ' ' + d.age;
+					cells.add( mesh );
+
+					marks.push( { id: ids.get( d ), kind: 'cell', object: mesh, normal: UP } );
+
+				}
+
+				/* ---------------- y axis: the notebook's ticks, on the front-left edge ----------------
+				   d3.axisLeft(y).ticks(null, "s") with the domain line removed:
+				   a 6 px tick per tick value, here a thin fat line at x = X0
+				   pointing left in the front plane z = 0 — the notebook's picture
+				   plane, where its axis is. (The brief said the back-left edge;
+				   from the front-right camera the tallest column, CA, stands in
+				   front of that edge, so the axis moved to the front where no bar
+				   can be between it and the camera.) Not marks. */
+
+				const ticks = y.ticks( null );
+				const tickFormat = y.tickFormat( null, 's' );
+
+				const axis = new THREE.Group();
+				axis.name = 'y axis';
+				scene.add( axis );
+
+				const tickMaterial = lineMaterial( { color: 0x000000, linewidth: 1 } );
+				const ZBACK = - DEPTH;
+				const XR = worldX( WIDTH - MARGIN.right );      // right edge of the notebook's plot area
+
+				for ( const t of ticks ) {
+
+					const line = fatLine( [
+						new THREE.Vector3( X0 - TICK_PX * S, worldY( t ), ZFRONT ),
+						new THREE.Vector3( X0, worldY( t ), ZFRONT )
+					], { material: tickMaterial } );
+					line.name = 'tick ' + tickFormat( t );
+					axis.add( line );
+
+				}
+
+				/* ---------------- camera + labels ----------------
+				   Labels: the notebook's three sets of axis text.
+				     - state abbreviations (fx axis) lying flat on the ground in
+				       front of each column, centred, 9 px (tick + padding) beyond
+				       the near edge;
+				     - age groups (the depth band) lying flat on the ground to the
+				       right of each row, left-aligned 9 px beyond the plot area (the
+				       side the camera sees; the left side is behind the bars);
+				     - tick values (y axis) standing in the front plane z = 0,
+				       right-aligned 9 px before the axis line, at the tick height.
+				   The em is LABEL_PX at the target distance at 400x250, so the
+				   camera is fitted first, then the labels sized, then the camera
+				   refitted to the label corners (three rounds, as tree-of-life). */
+
+				const font = await VectorFont.load( FONT );
+				const measure = ( text, em ) => {
+
+					let units = 0;
+					for ( let i = 0; i < text.length; i ++ ) {
+
+						units += font.advanceWidth( text[ i ] );
+						if ( i ) units += font.kerning( text[ i - 1 ], text[ i ] );
+
+					}
+
+					return units / font.unitsPerEm * em;
+
+				};
+
+				const PAD = ( TICK_PX + TICK_PAD_PX ) * S;     // 9 px: tick + padding
+
+				const barsBox = new THREE.Box3(
+					new THREE.Vector3( worldX( fx( table[ 0 ].name ) ), 0, ZBACK ),
+					new THREE.Vector3( worldX( fx( table[ table.length - 1 ].name ) + fx.bandwidth() ), worldY( y.domain()[ 1 ] ), ZFRONT )
+				);
+
+				const view = { elevation: 30, azimuth: 35, fill: 0.85 };
+				let target, pxPerUnit, fontSize;
+
+				// [ text, anchor point, anchorX, orientation ] for every label,
+				// plus the corners its block covers, for the fit
+				const flat = basisQuaternion( new THREE.Vector3( 1, 0, 0 ), new THREE.Vector3( 0, 0, - 1 ) ); // lying on the ground, faces +y
+				const wall = basisQuaternion( new THREE.Vector3( 1, 0, 0 ), new THREE.Vector3( 0, 1, 0 ) );   // standing in the front plane, faces +z
+
+				const specs = () => {
+
+					const out = [];
+
+					for ( const state of fx.domain() ) {
+
+						const text = state;
+						const w = measure( text, fontSize );
+						const cx = worldX( fx( state ) + fx.bandwidth() / 2 );
+						const zc = ZFRONT + PAD + 0.5 * fontSize;
+						out.push( {
+							id: 'x ' + state, text, anchor: new THREE.Vector3( cx - w / 2, 0, zc ), end: false, q: flat,
+							corners: [ new THREE.Vector3( cx - w / 2, 0, zc + 0.5 * fontSize ), new THREE.Vector3( cx + w / 2, 0, zc + 0.5 * fontSize ) ]
+						} );
+
+					}
+
+					for ( const age of z.domain() ) {
+
+						const text = age;
+						const w = measure( text, fontSize );
+						const zc = worldZ( z( age ) + z.bandwidth() / 2 );
+						out.push( {
+							id: 'z ' + age, text, anchor: new THREE.Vector3( XR + PAD, 0, zc ), end: false, q: flat,
+							corners: [ new THREE.Vector3( XR + PAD + w, 0, zc - 0.5 * fontSize ), new THREE.Vector3( XR + PAD + w, 0, zc + 0.5 * fontSize ) ]
+						} );
+
+					}
+
+					for ( const t of ticks ) {
+
+						const text = tickFormat( t );
+						const w = measure( text, fontSize );
+						const yc = worldY( t );
+						out.push( {
+							id: 'y ' + text, text, anchor: new THREE.Vector3( X0 - PAD, yc, ZFRONT ), end: true, q: wall,
+							corners: [ new THREE.Vector3( X0 - PAD - w, yc - 0.5 * fontSize, ZFRONT ), new THREE.Vector3( X0 - PAD - w, yc + 0.5 * fontSize, ZFRONT ) ]
+						} );
+
+					}
+
+					return out;
+
+				};
+
+				const boxCorners = box => {
+
+					const c = [];
+					for ( let i = 0; i < 8; i ++ ) c.push( new THREE.Vector3( i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z ) );
+					return c;
+
+				};
+
+				const fit = () => {
+
+					pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+					fontSize = LABEL_PX / pxPerUnit;
+
+				};
+
+				target = frameCamera( camera, barsBox, view );
+				fit();
+
+				let labelSpecs;
+
+				for ( let i = 0; i < 3; i ++ ) {
+
+					labelSpecs = specs();
+					const points = boxCorners( barsBox ).concat( labelSpecs.flatMap( s => s.corners ) );
+					target = frameCamera( camera, barsBox, { ...view, points } );
+					fit();
+
+				}
+
+				labelSpecs = specs();
+
+				// hierarchyLabels anchors a childless shim `start` at +leafOffset and
+				// a shim with `children` `end` at -internalOffset; both offsets 0
+				// here, so the anchor point is the text's own edge.
+				const shims = labelSpecs.map( s => ( { data: { name: s.text }, spec: s, children: s.end ? [] : undefined } ) );
+				const shimIds = new Map( shims.map( s => [ s, s.spec.id ] ) );
+				const shimPositions = new Map( shims.map( s => [ s, s.spec.anchor ] ) );
+
+				labels = await hierarchyLabels( { descendants: () => shims }, shimIds, shimPositions, {
+					font: FONT,
+					fontSize,
+					color: 0x000000,
+					outlineWidth: 0.2, outlineColor: 0xffffff,
+					leafOffset: 0, internalOffset: 0,
+					orient: shim => shim.spec.q,
+					camera,
+					billboard: false
+				} );
+				scene.add( labels.group );
+
+				/* ---------------- for the worker's verification: occlusion of every bar top from both gate cameras ---------------- */
+
+				scene.updateMatrixWorld( true );
+
+				const hiddenFrom = cam => {
+
+					const ray = new THREE.Raycaster();
+					const hidden = [];
+					for ( const m of marks ) {
+
+						const p = m.object.getWorldPosition( new THREE.Vector3() );
+						ray.setFromCamera( p.clone().project( cam ), cam );
+						const hit = ray.intersectObjects( cells.children, false )[ 0 ];
+						if ( ! hit || hit.object !== m.object ) hidden.push( m.object.name );
+
+					}
+
+					return hidden;
+
+				};
+
+				const cameraB = ( () => {
+
+					const b = camera.clone();
+					const offset = camera.position.clone().sub( target ).applyAxisAngle( new THREE.Vector3( 0, 1, 0 ), Math.PI / 2 );
+					b.position.copy( target ).add( offset );
+					b.lookAt( target );
+					b.updateMatrixWorld( true );
+					b.updateProjectionMatrix();
+					return b;
+
+				} )();
+
+				window.__grouped = {
+					S, DEPTH, barW, barD, X0, fontSize, pxPerUnit,
+					states: fx.domain(), ages: z.domain(), ticks: ticks.map( tickFormat ),
+					fx: { bandwidth: fx.bandwidth(), step: fx.step() }, z: { bandwidth: z.bandwidth(), step: z.step(), range: zRange },
+					hiddenA: hiddenFrom( camera ), hiddenB: hiddenFrom( cameraB ),
+					bars: data.map( ( d, i ) => {
+
+						const b = new THREE.Box3().setFromObject( marks[ i ].object );
+						return { state: d.state, age: d.age, population: d.population, box: [ b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z ] };
+
+					} )
+				};
+
+				/* ---------------- renderer ---------------- */
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'fontSize:', fontSize.toFixed( 3 ), 'px/unit:', pxPerUnit.toFixed( 2 ),
+					'cells:', marks.length, 'labels:', labels.count, 'flipped:', labels.flipped,
+					'hidden A:', window.__grouped.hiddenA.length, 'hidden B:', window.__grouped.hiddenB.length );
+
+				const controls = attachOrbit( camera, renderer.domElement, target );
+				window.d33dev = { camera, controls, labels };
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: 0, links: 0, cells: data.length, labels: labelSpecs.length },
+					pickables: cells.children,
+					labels
+				} );
+
+			}
+
+			function animate() {
+
+				labels.update( camera ); // per-frame flip (plane fixed) so no label reads backwards from any side
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>
