@@ -287,7 +287,10 @@
 					'nodes:', root.descendants().length, 'imports:', imports.length,
 					'curves:', links.children.length, 'endpointError:', endpointError.toExponential( 2 ) );
 
-				attachOrbit( camera, renderer.domElement, target );
+				const controls = attachOrbit( camera, renderer.domElement, target );
+
+				// dev hook (tools/flip.js): orbit by script and count label flips
+				window.d33dev = { camera, controls, labels };
 
 				register( {
 					renderer, scene, camera, marks, target,
@@ -351,7 +354,7 @@
 
 			function animate() {
 
-				labels.update( camera ); // no-op unless billboard: true
+				labels.update( camera ); // per-frame mirror flip (plane fixed); billboard if enabled
 				renderer.render( scene, camera );
 
 			}

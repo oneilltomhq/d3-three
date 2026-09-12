@@ -187,7 +187,10 @@
 					'R(root):', R.get( root ).toFixed( 3 ), 'fontSize:', fontSize.toFixed( 3 ), 'px:', ( fontSize * pxPerUnit ).toFixed( 2 ), 'labels:', labels.count, 'flipped:', labels.flipped,
 					'nodes:', root.descendants().length, 'links:', root.links().length );
 
-				attachOrbit( camera, renderer.domElement, target );
+				const controls = attachOrbit( camera, renderer.domElement, target );
+
+				// dev hook (tools/flip.js): orbit by script and count label flips
+				window.d33dev = { camera, controls, labels };
 
 				register( {
 					renderer, scene, camera, marks, target,
@@ -304,7 +307,7 @@
 
 			function animate() {
 
-				labels.update( camera ); // no-op unless billboard: true
+				labels.update( camera ); // per-frame mirror flip (plane fixed); billboard if enabled
 				renderer.render( scene, camera );
 
 			}

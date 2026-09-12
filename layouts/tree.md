@@ -75,6 +75,11 @@ in one `BatchedText`, 252).
   start`) rotated with the subtree.
 - **Mirror rule** as in cluster.md: **89 of 252** labels are flipped at
   azimuth 9° (the blades whose radial points camera-left).
+- **Per frame:** orientation plane fixed; reading direction flips per frame to
+  face the camera (`labels.update(camera)` before each render, as in
+  cluster.md). Orbiting 180° turns all 252 (every blade is seen from its other
+  face); `tools/flip.js d3_tree` proves it and writes
+  `handoff/rung3/eyeball/d3_tree-flipped-1600x1000.png`.
 - `billboard: true` implemented, off. Labels are not marks, not pickable,
   `renderOrder 1`. Dumped to `marks/d3_tree.json` `labels[]` with the same
   fields as cluster.

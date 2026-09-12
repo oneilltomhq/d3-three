@@ -10,10 +10,14 @@
 //
 // Text local frame: +x along the baseline, +y up, faces +z (DoubleSide, so the
 // back reads too — mirrored). Mirroring is corrected here: if a label's local
-// +x would project to the LEFT of its -x from the registered camera, the label
-// is turned 180° about its own up axis and its anchor swapped start<->end, so
-// the block of text still occupies the same side of the node but reads
-// left-to-right. This is the notebook's `text-anchor: x < π ? start : end`.
+// +x would project to the LEFT of its -x from the camera, the label is turned
+// 180° about its own up axis and its anchor swapped start<->end, so the block
+// of text still occupies the same side of the node but reads left-to-right.
+// This is the notebook's `text-anchor: x < π ? start : end`. The check runs
+// once at layout time against camera A (that state is what the reference
+// screenshot and the marks dump record) and again every frame in
+// `update(camera)`, so orbiting behind a label's plane re-flips it in place:
+// the plane never moves, only the reading direction (rung 3, per-frame flip).
 //
 // Deterministic: opentype layout is pure arithmetic; the atlas is rasterised
 // by Chromium's software Skia (Path2D fill + EDT). Two-run identity in the
@@ -118,8 +122,13 @@ export function basisQuaternion( along, up, target = new THREE.Quaternion() ) {
  * @param {number} [opts.renderOrder=1]   after nodes and links
  * @param {string} [opts.text]            property of `d.data` to show (default `name`)
  * @returns {Promise<{ group: THREE.Group, batched: BatchedText, labels: object[],
- *           count: number, flipped: number, update: (camera) => void }>}
- *          `labels[i]` = { id, node, text, object, anchorX: 'start' | 'end', flipped }
+ *           count: number, flipped: number, update: (camera) => number }>}
+ *          `labels[i]` = { id, node, text, object, anchorX: 'start' | 'end', flipped,
+ *          anchor, q0, flipped0, state, flipQ, flipOffset } — `anchor`/`q0` are the
+ *          anchor point and orient() quaternion the mirror check is made against,
+ *          `flipped0` the layout-time verdict, `state` (0/1) whether the label is
+ *          currently turned relative to how it was laid out, `flipQ`/`flipOffset`
+ *          the quaternion and world translation that turn it (see `update`).
  */
 export async function hierarchyLabels( root, ids, positions, {
 	font,
@@ -189,6 +198,7 @@ export async function hierarchyLabels( root, ids, positions, {
 
 		let anchorX = leaf ? 'start' : 'end';
 		let wasFlipped = false;
+		let q0 = null;
 
 		if ( billboard ) {
 
@@ -198,6 +208,7 @@ export async function hierarchyLabels( root, ids, positions, {
 		} else {
 
 			label.quaternion.copy( orient( node ) );
+			q0 = label.quaternion.clone();
 
 			// anchor point: leaves hang outward along +x, internal nodes sit inward along -x
 			_x.set( 1, 0, 0 ).applyQuaternion( label.quaternion );
@@ -223,7 +234,12 @@ export async function hierarchyLabels( root, ids, positions, {
 		group.add( label );
 		batched.addText( label );
 
-		labels.push( { id: ids.get( node ), node, text: strings[ i ], object: label, anchorX, flipped: wasFlipped } );
+		labels.push( {
+			id: ids.get( node ), node, text: strings[ i ], object: label, anchorX, flipped: wasFlipped,
+			// per-frame flip state (filled in after sync(), when the block width is known)
+			anchor: label.position.clone(), q0, flipped0: wasFlipped, state: 0,
+			baseQ: label.quaternion.clone(), flipQ: null, flipOffset: null
+		} );
 
 	}
 
@@ -239,31 +255,98 @@ export async function hierarchyLabels( root, ids, positions, {
 
 	}
 
+	// Per-frame flip data. Turning a laid-out label 180° about its own up axis
+	// through its anchor would put the text block on the other side of the
+	// node; the layout-time flip compensates by swapping the anchor (a
+	// re-layout). The per-frame flip must not re-lay anything out, so it keeps
+	// lib3's anchor and instead moves the origin to the block's other end:
+	// block local x-extent [x0, x1] (blockBounds) turned about the origin
+	// becomes [-x1, -x0]; translating by (x0 + x1) along the laid-out +x puts
+	// it back on [x0, x1]. Same pixels as an anchor swap, one matrix write.
+	if ( ! billboard ) {
+
+		_flip.setFromAxisAngle( _y.set( 0, 1, 0 ), Math.PI );
+
+		for ( const l of labels ) {
+
+			const bb = l.object.textRenderInfo.blockBounds;
+			_x.set( 1, 0, 0 ).applyQuaternion( l.baseQ );
+			l.flipOffset = _x.multiplyScalar( bb[ 0 ] + bb[ 2 ] ).clone();
+			l.flipQ = l.baseQ.clone().multiply( _flip );
+
+		}
+
+	}
+
 	const api = {
 		group, batched, labels, count: labels.length, flipped, billboard,
 
-		// Billboard mode: face every label at `camera` (call once per frame).
+		// Call once per frame, before render. Billboard mode: face every label
+		// at `cam`. Planar mode: keep every label's plane, but re-run the mirror
+		// check against `cam` and turn (or turn back) the labels whose reading
+		// direction changed, so text never reads backwards from behind its
+		// plane. Unchanged labels cost the check only; touched ones get one
+		// setMatrixAt. Returns the number of labels touched.
 		update( cam ) {
 
-			if ( ! billboard ) return;
+			cam.updateMatrixWorld(); // project() below reads matrixWorldInverse
+
+			let touched = 0;
 
 			for ( let i = 0; i < labels.length; i ++ ) {
 
-				const object = labels[ i ].object;
-				object.quaternion.copy( cam.quaternion );
+				const l = labels[ i ];
+				const object = l.object;
+
+				if ( billboard ) {
+
+					object.quaternion.copy( cam.quaternion );
+
+				} else {
+
+					// Same test, same inputs as at layout time (orient() frame at
+					// the anchor), so under camera A this agrees with `flipped0`
+					// bit for bit and nothing moves on the first frame.
+					const state = mirrored( l.anchor, l.q0, cam ) !== l.flipped0 ? 1 : 0;
+					if ( state === l.state ) continue;
+
+					l.state = state;
+					l.flipped = l.flipped0 !== ( state === 1 );
+					l.anchorX = ( l.anchorX === 'start' ) ? 'end' : 'start';
+
+					if ( state ) {
+
+						object.quaternion.copy( l.flipQ );
+						object.position.copy( l.anchor ).add( l.flipOffset );
+
+					} else {
+
+						object.quaternion.copy( l.baseQ );
+						object.position.copy( l.anchor );
+
+					}
+
+				}
+
 				object.updateMatrixWorld( true );
 				batched.setMatrixAt( i, object.matrixWorld );
+				touched ++;
 
 			}
+
+			return touched;
 
 		},
 
 		// The marks-dump entries: world anchor position, orientation, anchor.
+		// The anchor point is the node-side end of the text block, which a
+		// per-frame flip never moves (only the Text's origin does).
 		dump() {
 
 			return labels.map( l => {
 
-				l.object.getWorldPosition( _p );
+				if ( l.q0 ) _p.copy( l.anchor ).applyMatrix4( group.matrixWorld );
+				else l.object.getWorldPosition( _p );
 				l.object.getWorldQuaternion( _q );
 				return {
 					id: l.id, text: l.text,

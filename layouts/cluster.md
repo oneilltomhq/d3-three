@@ -90,6 +90,13 @@ counterpart of the notebook's `paint-order: stroke`).
   (`start ↔ end`), so the text block stays on the same side of the node and
   reads left-to-right — the notebook's `text-anchor: x < π ? start : end`.
   **140 of 252** labels are flipped on this page at azimuth 35°.
+- **Per frame:** orientation plane fixed; reading direction flips per frame to
+  face the camera. `labels.update(camera)` runs before every render and
+  re-runs the same mirror test against the live camera; a label whose verdict
+  changed is turned 180° about its own up axis in place (the text block stays
+  on the same side of the node, no re-layout: the Text's origin moves to the
+  block's other end instead of swapping the anchor). Under camera A the
+  verdict equals the layout-time one, so the reference frame is untouched.
 - `billboard: true` is implemented in `hierarchyLabels` (camera quaternion
   copied into every label each frame) and **off** here.
 - Labels are not marks and are not pickable; the batch renders after nodes and
