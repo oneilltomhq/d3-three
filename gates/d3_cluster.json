@@ -33,10 +33,17 @@
 		},
 		"picking": {
 			"sampled": 20,
+			"sampledA": 20,
+			"sampledB": 20,
 			"hitA": 20,
 			"hitB": 20,
 			"pickables": 252,
 			"misses": [],
+			"pass": true
+		},
+		"labels": {
+			"count": 252,
+			"expectedNodes": 252,
 			"pass": true
 		},
 		"pass": true

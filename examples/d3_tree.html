@@ -21,7 +21,8 @@
 					"three/tsl": "/build/three.tsl.js",
 					"three/addons/": "/jsm/",
 					"d3": "/examples/jsm/vendor/d3.js",
-					"d33": "/src/d33.js"
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
 				}
 			}
 		</script>
@@ -35,8 +36,11 @@
 			import { frameCamera } from '/src/frame.js';
 			import { attachOrbit } from '/src/orbit.js';
 			import { hierarchyNodes } from '/src/nodes.js';
+			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
 
-			let renderer, scene, camera;
+			let renderer, scene, camera, labels;
+
+			const UP = new THREE.Vector3( 0, 1, 0 );
 
 			await init();
 
@@ -131,6 +135,38 @@
 					elevation: 30, azimuth: 9, fill: 0.85, points: nodePoints
 				} );
 
+				/* ---------------- labels: one Text per node (src/labels.js) ----------------
+				   Em size in world units: at most LABEL_PX tall at the frame's
+				   250 px height (measured at the camera's distance to the target),
+				   and never more than the layout's leaf pitch — the notebook's own
+				   rule (10 px text on a 10 px nodeSize), so neighbouring leaf
+				   labels do not overlap each other. Laid out (font awaited) BEFORE
+				   the animation loop exists, so the harness's single frame sees
+				   finished labels. */
+
+				const LABEL_PX = 8;
+				const LEAF_PITCH = 1; // dx = 1: the tidy breadth pitch between leaves in a blade
+				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+				const fontSize = Math.min( LABEL_PX / pxPerUnit, LEAF_PITCH );
+
+				labels = await hierarchyLabels( root, ids, position, {
+					font: '/examples/fonts/Roboto-Regular.ttf',
+					fontSize,
+					color: 0x333333,
+					outlineWidth: 0.25, outlineColor: 0xffffff,
+					leafOffset: 0.45 + 0.35, internalOffset: 0.6 + 0.35,
+					orient: node => {
+
+						// in the blade's plane: +x along the blade's radial direction, up vertical
+						const radial = axis.get( node ) || new THREE.Vector3( 1, 0, 0 ); // root: no blade
+						return basisQuaternion( radial, UP );
+
+					},
+					camera,
+					billboard: false
+				} );
+				scene.add( labels.group );
+
 				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
 				renderer.setPixelRatio( window.devicePixelRatio );
 				renderer.setSize( window.innerWidth, window.innerHeight );
@@ -140,7 +176,7 @@
 				await renderer.init();
 
 				console.log( 'd33 backend:', renderer.backend.constructor.name,
-					'B:', B.toFixed( 3 ), 'dy:', dy.toFixed( 3 ),
+					'B:', B.toFixed( 3 ), 'dy:', dy.toFixed( 3 ), 'fontSize:', fontSize.toFixed( 3 ), 'px:', ( fontSize * pxPerUnit ).toFixed( 2 ), 'labels:', labels.count, 'flipped:', labels.flipped,
 					'nodes:', root.descendants().length, 'links:', root.links().length );
 
 				attachOrbit( camera, renderer.domElement, target );
@@ -148,7 +184,8 @@
 				register( {
 					renderer, scene, camera, marks, target,
 					expected: { nodes: root.descendants().length, links: root.links().length },
-					pickables: nodes.children
+					pickables: nodes.children,
+					labels
 				} );
 
 			}
@@ -224,6 +261,7 @@
 
 			function animate() {
 
+				labels.update( camera ); // no-op unless billboard: true
 				renderer.render( scene, camera );
 
 			}

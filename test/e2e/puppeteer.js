@@ -16,10 +16,15 @@
 //     failure, printed red, like a diff failure; a page with no `window.d33`
 //     is a failure;
 //   * `--twice`: render + screenshot each file twice and assert compare()
-//     finds 0 differing pixels (§D.18).
+//     finds 0 differing pixels (§D.18);
+//   * `--size WxH` (rung 3): render at that size (still at viewScale 2, then
+//     downscaled) and write `handoff/rung3/eyeball/<file>-<W>x<H>.png` for the
+//     user to look at. No reference is read or written, no marks/gates either:
+//     the 400x250 reference path is untouched.
 
 import puppeteer from 'puppeteer';
 import { Image } from './image.js';
+import { PNG } from 'pngjs';
 import * as fs from 'fs/promises';
 import * as crypto from 'crypto';
 import * as os from 'os';
@@ -42,8 +47,8 @@ const parseTime = 1; // 1 second per megabyte
 const networkTimeout = 5; // 5 minutes, set to 0 to disable
 const renderTimeout = 5; // 5 seconds, set to 0 to disable
 
-const width = 400;
-const height = 250;
+let width = 400;
+let height = 250;
 const viewScale = 2;
 const jpgQuality = 95;
 
@@ -100,6 +105,7 @@ async function main() {
 
 	let isMakeScreenshot = false;
 	let isTwice = false;
+	let eyeball = null; // { width, height } from --size WxH
 
 	let argvIndex = 2;
 
@@ -115,9 +121,26 @@ async function main() {
 			isTwice = true;
 			argvIndex ++;
 
+		} else if ( process.argv[ argvIndex ] === '--size' ) {
+
+			const m = /^(\d+)x(\d+)$/.exec( process.argv[ argvIndex + 1 ] || '' );
+			if ( ! m ) {
+
+				console.red( '--size needs WxH, e.g. --size 1600x1000' );
+				process.exit( 1 );
+
+			}
+
+			eyeball = { width: parseInt( m[ 1 ], 10 ), height: parseInt( m[ 2 ], 10 ) };
+			width = eyeball.width;
+			height = eyeball.height;
+			argvIndex += 2;
+
 		} else break;
 
 	}
+
+	if ( eyeball ) await fs.mkdir( 'handoff/rung3/eyeball', { recursive: true } );
 
 	const exactList = process.argv.slice( argvIndex )
 		.map( f => f.replace( '.html', '' ) );
@@ -257,7 +280,7 @@ async function main() {
 
 	for ( const file of files ) {
 
-		await checkFile( ctx, failedScreenshots, cleanPage, { isMakeScreenshot, isTwice }, file );
+		await checkFile( ctx, failedScreenshots, cleanPage, { isMakeScreenshot, isTwice, eyeball }, file );
 
 	}
 
@@ -266,7 +289,16 @@ async function main() {
 	failedScreenshots.sort();
 	const list = failedScreenshots.join( ' ' );
 
-	if ( isMakeScreenshot && failedScreenshots.length ) {
+	if ( eyeball && failedScreenshots.length ) {
+
+		console.red( 'List of failed eyeball renders: ' + list );
+		console.red( `${ failedScreenshots.length } from ${ files.length } eyeball renders failed.` );
+
+	} else if ( eyeball ) {
+
+		console.green( `${ files.length } eyeball renders written (${ width }x${ height }).` );
+
+	} else if ( isMakeScreenshot && failedScreenshots.length ) {
 
 		console.red( 'List of failed screenshots: ' + list );
 		console.red( `${ failedScreenshots.length } from ${ files.length } screenshots have not generated successfully.` );
@@ -632,6 +664,9 @@ function formatGates( gates ) {
 
 	lines.push( `picking: ${ gates.picking.pass ? 'PASS' : 'FAIL' } sampled=${ gates.picking.sampled } hitA=${ gates.picking.hitA } hitB=${ gates.picking.hitB }${ gates.picking.note ? ' ' + gates.picking.note : '' }` );
 
+	const labels = gates.labels || { pass: false, count: 0, expectedNodes: 0, note: 'no labels gate in report' };
+	lines.push( `labels: ${ labels.pass ? 'PASS' : 'FAIL' } count=${ labels.count }/${ labels.expectedNodes }${ labels.note ? ' ' + labels.note : '' }` );
+
 	return lines;
 
 }
@@ -641,7 +676,8 @@ async function writeReport( file, report ) {
 	await fs.writeFile( `marks/${ file }.json`, JSON.stringify( {
 		file,
 		expected: report.expected,
-		marks: report.marks
+		marks: report.marks,
+		labels: report.labels || []
 	}, null, '\t' ) + '\n' );
 
 	await fs.writeFile( `gates/${ file }.json`, JSON.stringify( {
@@ -662,7 +698,7 @@ function sha256( buffer ) {
 
 async function checkFile( ctx, failedScreenshots, cleanPage, mode, file ) {
 
-	const { isMakeScreenshot, isTwice } = mode;
+	const { isMakeScreenshot, isTwice, eyeball } = mode;
 
 	try {
 
@@ -687,12 +723,33 @@ async function checkFile( ctx, failedScreenshots, cleanPage, mode, file ) {
 
 		}
 
-		await writeReport( file, first.report );
-
 		const gates = first.report.gates;
 		const env = first.report.env;
 
 		console.log( `[d33] ${ file }: backend=${ env.backend } navigator.gpu=${ env.hasNavigatorGPU } adapter=${ JSON.stringify( env.adapterInfo ) }` );
+
+		if ( eyeball ) {
+
+			/* Eyeball render for the user: PNG at the requested size, nothing else touched */
+
+			const out = `handoff/rung3/eyeball/${ file }-${ eyeball.width }x${ eyeball.height }.png`;
+			const png = new PNG( { width: first.screenshot.width, height: first.screenshot.height } );
+			png.data = Buffer.from( first.screenshot.data );
+			await fs.writeFile( out, PNG.sync.write( png ) );
+
+			console.green( `Eyeball render written: ${ out } (${ first.screenshot.width }x${ first.screenshot.height })` );
+
+			for ( const line of formatGates( gates ) ) {
+
+				( gates.pass ? console.green : console.yellow )( `  gate ${ line }` );
+
+			}
+
+			return;
+
+		}
+
+		await writeReport( file, first.report );
 
 		if ( isTwice ) {
 
@@ -806,7 +863,7 @@ async function checkFile( ctx, failedScreenshots, cleanPage, mode, file ) {
 
 		if ( ! gates.pass ) {
 
-			const failed = [ 'depth', 'counts', 'angle', 'picking' ].filter( g => ! gates[ g ].pass );
+			const failed = [ 'depth', 'counts', 'angle', 'picking', 'labels' ].filter( g => ! gates[ g ] || ! gates[ g ].pass );
 			throw new Error( `Gates failed (${ failed.join( ', ' ) }) in file: ${ file }` );
 
 		}
