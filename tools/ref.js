@@ -49,6 +49,11 @@ const settleMs = Number( process.env.REF_SETTLE_MS ) || 0;
 const extraValues = JSON.parse( process.env.REF_VALUES || '{}' );
 const svgSize = Number( process.env.REF_SVG_SIZE ) || 0;
 const thenCells = ( process.env.REF_THEN || '' ).split( ',' ).map( s => s.trim() ).filter( Boolean );
+// Cells that are Observable inputs (`viewof tile` = Inputs.select(...)) have no
+// value here; REF_EXPRS supplies them as a JSON object of JS expressions
+// evaluated in the page with `d3` in scope, e.g.
+//   REF_EXPRS='{"tile":"d3.treemapBinary"}' node tools/ref.js hierarchies/treemap.v2
+const extraExprs = JSON.parse( process.env.REF_EXPRS || '{}' );
 
 /* The notebook's cell wiring: cell name -> { deps, fn } */
 
@@ -121,7 +126,7 @@ await page.evaluate( async url => {
 
 }, `http://localhost:${ port }/examples/jsm/vendor/d3.js` );
 
-const size = await page.evaluate( async ( script, cells, filesBase, extraValues, svgSize, thenCells ) => {
+const size = await page.evaluate( async ( script, cells, filesBase, extraValues, svgSize, thenCells, extra ) => {
 
 	eval( script ); // eslint-disable-line no-eval
 
@@ -132,6 +137,8 @@ const size = await page.evaluate( async ( script, cells, filesBase, extraValues,
 		// never is, so a promise that never settles. Passed to the cell as-is
 		// (see `call`): awaiting it would never return.
 		invalidation: new Promise( () => {} ),
+		// Observable's DOM.uid: a unique id usable as `id` / `url(#id)`
+		DOM: { uid: ( () => { let n = 0; return name => { const id = `O-${ name || '' }-${ ++ n }`; return { id, href: `#${ id }`, toString: () => `url(#${ id })` }; }; } )() },
 		FileAttachment: name => ( {
 			json: () => fetch( filesBase + name ).then( r => r.json() ),
 			text: () => fetch( filesBase + name ).then( r => r.text() ),
@@ -140,6 +147,12 @@ const size = await page.evaluate( async ( script, cells, filesBase, extraValues,
 			url: () => filesBase + name
 		} )
 	};
+
+	for ( const [ name, expression ] of Object.entries( extra ) ) {
+
+		values[ name ] = ( 0, eval )( `( d3 => ( ${ expression } ) )` )( window.d3 ); // eslint-disable-line no-eval
+
+	}
 
 	const call = async name => {
 
@@ -174,7 +187,7 @@ const size = await page.evaluate( async ( script, cells, filesBase, extraValues,
 	const rect = node.getBoundingClientRect();
 	return { width: Math.ceil( rect.width ), height: Math.ceil( rect.height ) };
 
-}, script, Object.fromEntries( cells ), `http://localhost:${ port }/gallery/${ target }/files/`, extraValues, svgSize, thenCells );
+}, script, Object.fromEntries( cells ), `http://localhost:${ port }/gallery/${ target }/files/`, extraValues, svgSize, thenCells, extraExprs );
 
 await page.setViewport( { width: size.width, height: size.height } );
 

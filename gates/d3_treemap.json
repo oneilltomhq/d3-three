@@ -1,0 +1,77 @@
+{
+	"file": "d3_treemap",
+	"gates": {
+		"depth": {
+			"extents": [
+				19.32409012131716,
+				0,
+				19.020797227036397
+			],
+			"ratio": 0,
+			"pass": true,
+			"note": "planar by ruling"
+		},
+		"counts": {
+			"nodes": 0,
+			"links": 0,
+			"cells": 220,
+			"expectedNodes": 0,
+			"expectedLinks": 0,
+			"expectedCells": 220,
+			"pass": true
+		},
+		"angle": {
+			"a": {
+				"width": 0.5962013020534049,
+				"height": 0.7686486863591492,
+				"area": 0.45826934762896404
+			},
+			"b": {
+				"width": 0.6061241220566489,
+				"height": 0.8046331930517414,
+				"area": 0.4877075877161248
+			},
+			"threshold": 0.01,
+			"pass": true
+		},
+		"picking": {
+			"sampled": 20,
+			"sampledA": 20,
+			"sampledB": 20,
+			"hitA": 20,
+			"hitB": 20,
+			"pickables": 220,
+			"misses": [],
+			"pass": true
+		},
+		"labels": {
+			"count": 30,
+			"expectedNodes": 30,
+			"source": "page",
+			"pass": true
+		},
+		"pass": true
+	},
+	"expected": {
+		"nodes": 0,
+		"links": 0,
+		"cells": 220,
+		"labels": 30
+	},
+	"target": {
+		"x": 9.493973686367065,
+		"y": -0.954473897442721,
+		"z": -8.128119518469626
+	},
+	"env": {
+		"backend": "WebGPUBackend",
+		"isWebGPUBackend": true,
+		"hasNavigatorGPU": true,
+		"adapterInfo": {
+			"vendor": "google",
+			"architecture": "swiftshader",
+			"device": "",
+			"description": ""
+		}
+	}
+}

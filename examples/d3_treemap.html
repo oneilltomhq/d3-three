@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d33 - treemap, flat in the 3D world</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body { margin: 0; background: #fff; overflow: hidden; }
+			#info { position: absolute; top: 0; width: 100%; text-align: center; color: #555; font: 13px sans-serif; padding: 8px 0; }
+		</style>
+	</head>
+	<body>
+
+		<div id="info">d33 - d3 treemap (flare), the notebook's chart rendered flat inside the 3D world (planar by ruling)</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "/build/three.webgpu.js",
+					"three/webgpu": "/build/three.webgpu.js",
+					"three/tsl": "/build/three.tsl.js",
+					"three/addons/": "/jsm/",
+					"d3": "/examples/jsm/vendor/d3.js",
+					"d33": "/src/d33.js",
+					"lib3/sdf-text": "/lib3/sdfText.js"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three/webgpu';
+			import * as d3 from 'd3';
+			import { register } from 'd33';
+			import { frameCamera } from '/src/frame.js';
+			import { attachOrbit } from '/src/orbit.js';
+			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
+			import { VectorFont } from 'lib3/sdf-text';
+
+			let renderer, scene, camera, labels;
+
+			/* ---------------- layouts/treemap.md ----------------
+			   Planar by ruling (handoff/rung0/LOG.md): the notebook's treemap,
+			   drawn faithfully in the xz plane of the 3D world. d3.treemap with
+			   treemapBinary decides every rect exactly as the notebook; the
+			   leaves — the only nodes the notebook draws — are thin lit tiles. */
+
+			const WIDTH = 1154, HEIGHT = 1154;         // the notebook's size
+			const SIDE = 20;                           // world units of the square
+			const S = SIDE / WIDTH;                    // notebook px -> world units
+			const THICK = 0.015 * SIDE;                // tile thickness: 1.5 % of the width
+			const FONT = '/examples/fonts/Roboto-Regular.ttf';
+			const LABEL_PX = 5;                        // label em at the target distance, 400x250
+			const LINE = 0.9;                          // the notebook's 0.9em line pitch
+			const LABEL_PAD_PX = 3;                    // the notebook's `x = 3`
+
+			await init();
+
+			async function init() {
+
+				if ( navigator.gpu ) {
+
+					try {
+
+						const adapter = await navigator.gpu.requestAdapter();
+						const info = adapter ? adapter.info : null;
+
+						window.__d33AdapterInfo = info ? {
+							vendor: info.vendor, architecture: info.architecture,
+							device: info.device, description: info.description
+						} : null;
+
+					} catch ( e ) {
+
+						window.__d33AdapterInfo = { error: String( e ) };
+
+					}
+
+				}
+
+				/* ---------------- data + d3 layout (the notebook's chart cell) ---------------- */
+
+				const data = await fetch( '/gallery/hierarchies/treemap.v2/files/flare.json' ).then( r => r.json() );
+
+				const color = d3.scaleOrdinal( data.children.map( d => d.name ), d3.schemeTableau10 );
+				const format = d3.format( ',d' );
+
+				const root = d3.treemap()
+					.tile( d3.treemapBinary )
+					.size( [ WIDTH, HEIGHT ] )
+					.padding( 1 )
+					.round( true )
+				( d3.hierarchy( data )
+					.sum( d => d.value )
+					.sort( ( a, b ) => b.value - a.value ) );
+
+				const leaves = root.leaves();
+
+				// notebook (x, y) -> world (x, z): x -> x, y -> z shifted so the
+				// square spans z in [-SIDE, 0]; the notebook's top edge is the far
+				// edge from camera A and its left edge is the left edge.
+				const toWorld = ( x, y ) => new THREE.Vector3( x * S, 0, y * S - SIDE );
+
+				/* ---------------- scene ---------------- */
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				scene.add( new THREE.HemisphereLight( 0xffffff, 0xbfc4cc, 2.0 ) );
+
+				const sun = new THREE.DirectionalLight( 0xffffff, 1.6 );
+				sun.position.set( 1.2, 2, 1 ).normalize();
+				scene.add( sun );
+
+				camera = new THREE.PerspectiveCamera( 35, window.innerWidth / window.innerHeight, 0.1, 4000 );
+
+				/* ---------------- marks: one Mesh(BoxGeometry) per leaf ----------------
+				   A unit box hanging below its origin, scaled to (width, THICK,
+				   height) and placed at the centre of its top face, so the mark
+				   position is the tile's own pixel and the world-space footprint
+				   is exactly the notebook rect. */
+
+				const unitBox = new THREE.BoxGeometry( 1, 1, 1 ).translate( 0, - 0.5, 0 );
+				const UP = [ 0, 1, 0 ];
+				const white = new THREE.Color( 0xffffff );
+				const materials = new Map(); // package -> material
+
+				const pkg = d => { while ( d.depth > 1 ) d = d.parent; return d.data.name; };
+
+				const material = node => {
+
+					const key = pkg( node );
+
+					if ( ! materials.has( key ) ) {
+
+						// the notebook's fill at fill-opacity 0.6 on white
+						materials.set( key, new THREE.MeshStandardNodeMaterial( {
+							color: new THREE.Color( color( key ) ).lerp( white, 0.4 ), roughness: 0.75, metalness: 0
+						} ) );
+
+					}
+
+					return materials.get( key );
+
+				};
+
+				const cells = new THREE.Group();
+				cells.name = 'cells';
+				scene.add( cells );
+
+				const ids = new Map();
+				leaves.forEach( ( leaf, i ) => ids.set( leaf, 'c' + i ) );
+
+				const marks = [];
+
+				for ( const leaf of leaves ) {
+
+					const mesh = new THREE.Mesh( unitBox, material( leaf ) );
+					mesh.scale.set( ( leaf.x1 - leaf.x0 ) * S, THICK, ( leaf.y1 - leaf.y0 ) * S );
+					mesh.position.copy( toWorld( ( leaf.x0 + leaf.x1 ) / 2, ( leaf.y0 + leaf.y1 ) / 2 ) );
+					mesh.position.y = THICK;
+					mesh.name = leaf.ancestors().reverse().map( a => a.data.name ).join( '.' );
+					cells.add( mesh );
+
+					marks.push( { id: ids.get( leaf ), kind: 'cell', object: mesh, normal: UP } );
+
+				}
+
+				// The notebook's 1 px gaps are 0.017 world units here — sub-pixel —
+				// so each tile's top rect is outlined in white (the gap's colour).
+				// Not marks; one closed Line per leaf, in its own group.
+				const outlines = new THREE.Group();
+				outlines.name = 'outlines';
+				scene.add( outlines );
+
+				const outlineMaterial = new THREE.LineBasicNodeMaterial( { color: 0xffffff } );
+				const LIFT = 0.012; // above the face, so nothing z-fights
+
+				for ( const leaf of leaves ) {
+
+					const a = toWorld( leaf.x0, leaf.y0 ), b = toWorld( leaf.x1, leaf.y0 );
+					const c = toWorld( leaf.x1, leaf.y1 ), e = toWorld( leaf.x0, leaf.y1 );
+					for ( const p of [ a, b, c, e ] ) p.y = THICK + LIFT;
+
+					const loop = new THREE.Line( new THREE.BufferGeometry().setFromPoints( [ a, b, c, e, a ] ), outlineMaterial );
+					loop.name = 'outline ' + leaf.data.name;
+					outlines.add( loop );
+
+				}
+
+				/* ---------------- camera ---------------- */
+
+				const box = new THREE.Box3( new THREE.Vector3( 0, 0, - SIDE ), new THREE.Vector3( SIDE, THICK + LIFT, 0 ) );
+
+				const view = { elevation: 55, azimuth: 20, fill: 0.85 };
+				const target = frameCamera( camera, box, view );
+
+				/* ---------------- labels: as the notebook, lying in the top plane ----------------
+				   One multi-line Text per leaf: the name split on capitals and
+				   spaces, one word per line, then the formatted value, at the
+				   rect's top-left + 3 px, 0.9 em per line; only where all the
+				   lines fit (width of the widest line + 2 pads, height of the
+				   block + pad), measured from the TTF. The em is LABEL_PX at the
+				   target distance at 400x250. */
+
+				const pxPerUnit = 250 / ( 2 * camera.position.distanceTo( target ) * Math.tan( camera.fov * Math.PI / 360 ) );
+				const fontSize = LABEL_PX / pxPerUnit;
+				const pad = LABEL_PAD_PX * S;
+
+				const font = await VectorFont.load( FONT );
+				const measure = text => {
+
+					let units = 0;
+					for ( let i = 0; i < text.length; i ++ ) {
+
+						units += font.advanceWidth( text[ i ] );
+						if ( i ) units += font.kerning( text[ i - 1 ], text[ i ] );
+
+					}
+
+					return units / font.unitsPerEm * fontSize;
+
+				};
+
+				const flat = basisQuaternion( new THREE.Vector3( 1, 0, 0 ), new THREE.Vector3( 0, 0, - 1 ) );
+
+				const labelled = [];             // proxy nodes, one per labelled leaf
+				const labelIds = new Map();
+				const anchors = new Map();
+
+				for ( const leaf of leaves ) {
+
+					const lines = leaf.data.name.split( /(?=[A-Z][a-z])|\s+/g ).concat( format( leaf.value ) );
+					const w = ( leaf.x1 - leaf.x0 ) * S, h = ( leaf.y1 - leaf.y0 ) * S;
+					const widest = Math.max( ...lines.map( measure ) );
+
+					if ( w < widest + 2 * pad || h < pad + lines.length * LINE * fontSize ) continue;
+
+					const proxy = { data: { name: lines.join( '\n' ) }, leaf };
+					const anchor = toWorld( leaf.x0, leaf.y0 );
+					anchor.x += pad;
+					anchor.z += pad;
+					anchor.y = THICK + LIFT;
+
+					labelled.push( proxy );
+					labelIds.set( proxy, ids.get( leaf ) );
+					anchors.set( proxy, anchor );
+
+				}
+
+				labels = await hierarchyLabels( { descendants: () => labelled }, labelIds, anchors, {
+					font: FONT,
+					fontSize,
+					color: 0x222222,
+					outlineWidth: 0.2, outlineColor: 0xffffff,
+					leafOffset: 0,
+					orient: () => flat,
+					camera,
+					billboard: false
+				} );
+
+				// block anchored at its top-left, the notebook's line pitch
+				for ( const l of labels.labels ) {
+
+					l.object.anchorY = 'top';
+					l.object.lineHeight = LINE;
+
+				}
+
+				labels.group.updateMatrixWorld( true );
+				labels.batched.sync();
+				scene.add( labels.group );
+
+				// for the worker's verification script: the notebook rects and the
+				// world-space footprint of every leaf's mesh, read off its matrix
+				scene.updateMatrixWorld( true );
+				window.__treemap = {
+					S, SIDE, THICK,
+					leaves: leaves.map( ( leaf, i ) => {
+
+						const b = new THREE.Box3().setFromObject( marks[ i ].object );
+						return {
+							name: leaf.data.name, depth: leaf.depth,
+							x0: leaf.x0, y0: leaf.y0, x1: leaf.x1, y1: leaf.y1,
+							box: [ b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z ]
+						};
+
+					} )
+				};
+
+				/* ---------------- renderer ---------------- */
+
+				renderer = new THREE.WebGPURenderer( { antialias: true, alpha: false, forceWebGL: false } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setAnimationLoop( animate );
+				document.body.appendChild( renderer.domElement );
+
+				await renderer.init();
+
+				console.log( 'd33 backend:', renderer.backend.constructor.name,
+					'fontSize:', fontSize.toFixed( 3 ), 'px/unit:', pxPerUnit.toFixed( 2 ),
+					'cells:', marks.length, 'leaves:', leaves.length,
+					'labels:', labels.count, 'flipped:', labels.flipped );
+
+				const controls = attachOrbit( camera, renderer.domElement, target );
+				window.d33dev = { camera, controls, labels };
+
+				register( {
+					renderer, scene, camera, marks, target,
+					expected: { nodes: 0, links: 0, cells: leaves.length, labels: labelled.length },
+					pickables: cells.children,
+					labels,
+					planar: true
+				} );
+
+			}
+
+			function animate() {
+
+				labels.update( camera ); // per-frame mirror flip (plane fixed); billboard if enabled
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+
+	</body>
+</html>

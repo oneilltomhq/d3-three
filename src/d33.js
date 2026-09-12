@@ -19,12 +19,17 @@
 //   normal:   optional on a mark (unit Vector3 or [x,y,z]); the picking gate
 //             samples a mark from a camera only if it faces it
 //             (dot(normal, camera − mark) > 0). Absent = always eligible.
+//   planar:   optional `true` for a chart rendered flat inside the 3D world
+//             (director ruling, handoff/rung0/LOG.md): the depth gate still
+//             reports the ratio but passes with note 'planar by ruling'.
 //   pickables: optional array of Object3D the picking gate is allowed to hit.
 //             Defaults to the node/cell mark objects, so grids, helpers and
 //             link geometry can never occlude a node (rung 0 director ruling).
-//   labels:   optional `{ count, dump? }` (the object `hierarchyLabels()` in
-//             src/labels.js returns). Labels are not marks; the labels gate
-//             checks `count === nodes`, and `dump()` — one entry per label,
+//   labels:   optional `{ count, dump? }` (the object `hierarchyLabels()`
+//             in src/labels.js returns). Labels are not marks; the labels
+//             gate checks `count === expected.labels` when the page supplies
+//             it (a treemap labels leaves only), otherwise `count === nodes`,
+//             and `dump()` — one entry per label,
 //             `{ id, text, x, y, z, q: [x,y,z,w], anchorX }` — is written to
 //             the marks JSON as a separate `labels` array (rung 3).
 //
@@ -39,7 +44,7 @@ const state = {
 	scene: null,
 	camera: null,
 	marks: [],
-	expected: { nodes: 0, links: 0 },
+	expected: { nodes: 0, links: 0, cells: 0 },
 	target: null,
 	pickables: null,
 	labels: null,
@@ -57,11 +62,12 @@ export function register( options ) {
 	state.scene = options.scene || null;
 	state.camera = options.camera || null;
 	state.marks = options.marks || [];
-	state.expected = options.expected || { nodes: 0, links: 0 };
+	state.expected = options.expected || { nodes: 0, links: 0, cells: 0 };
 	state.target = options.target || null;
 	state.planar = options.planar === true;
 	state.pickables = options.pickables || null;
 	state.labels = options.labels || null;
+	state.planar = options.planar === true;
 
 	window.d33 = api;
 
@@ -240,7 +246,10 @@ function countsGate( marks ) {
 }
 
 // Every node carries a label (rung 3). Labels are not marks, so this is a
-// separate count: the number of `Text` members registered vs the node marks.
+// separate count: the number of `Text` members registered vs the node marks —
+// or vs the page's own `expected.labels` when it labels a subset (a treemap
+// labels leaves only, and only those wide enough). `expectedNodes` keeps its
+// name because the harness prints it.
 function labelsGate( marks ) {
 
 	const nodes = marks.filter( m => m.kind === 'node' ).length;
