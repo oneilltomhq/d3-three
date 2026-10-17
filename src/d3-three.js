@@ -4,23 +4,20 @@
 //
 //   register( { renderer, scene, camera, marks, expected, target } )
 //
-//   marks:    one entry per datum (HANDOFF §C.11)
+//   marks:    one entry per datum (the counts gate)
 //             { id, kind: 'node' | 'link' | 'cell' | 'extension', object, a?, b? }
 //             `a`/`b` are the ids of the two endpoint marks of a link;
 //             an `extension` (tree-of-life's leaf link extension) carries `a`.
 //   expected: { nodes, links, cells?, extensions?, labels? } straight off the
-//             d3 hierarchy ( root.descendants().length, root.links().length )
-//             (§C.12); `cells` and `extensions` default to 0; `labels`
+//             d3 hierarchy ( root.descendants().length, root.links().length );
+//             `cells` and `extensions` default to 0; `labels`
 //             defaults to `nodes` (sunburst, treemap, tree-of-life label subsets).
 //   target:   optional orbit target; defaults to the centroid of node/cell marks.
-//   planar:   optional; true for a 2D chart rendered flat in the 3D world
-//             (director ruling, handoff/rung0/LOG.md): the depth gate still
-//             reports its ratio but passes with note 'planar by ruling'.
 //   normal:   optional on a mark (unit Vector3 or [x,y,z]); the picking gate
 //             samples a mark from a camera only if it faces it
 //             (dot(normal, camera − mark) > 0). Absent = always eligible.
 //   planar:   optional `true` for a chart rendered flat inside the 3D world
-//             (director ruling, handoff/rung0/LOG.md): the depth gate still
+//             (the planar ruling, README "The ladder"): the depth gate still
 //             reports the ratio but passes with note 'planar by ruling'.
 //   pickables: optional array of Object3D the picking gate is allowed to hit.
 //             Defaults to the node/cell mark objects, so grids, helpers and
@@ -52,9 +49,9 @@ const state = {
 };
 
 // gate thresholds
-const DEPTH_RATIO = 0.25;   // §B.7 smallest extent >= 1/4 of the largest
-const AREA_FRACTION = 0.01; // §B.9 NDC bounding-box area, as a fraction of the viewport
-const PICK_SAMPLES = 20;    // §B.10 how many nodes to raycast
+const DEPTH_RATIO = 0.25;   // depth gate: smallest extent >= 1/4 of the largest
+const AREA_FRACTION = 0.01; // angle gate: NDC bounding-box area, as a fraction of the viewport
+const PICK_SAMPLES = 20;    // picking gate: how many nodes to raycast
 
 export function register( options ) {
 
@@ -147,7 +144,7 @@ function centroid( points ) {
 /* cameras */
 
 // Camera B: camera A rotated 90 degrees about the scene up axis, around the
-// same target and at the same distance (§B.9).
+// same target and at the same distance (the angle gate).
 function orthogonalCamera( cameraA, target ) {
 
 	const cameraB = cameraA.clone();

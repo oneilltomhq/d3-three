@@ -1,7 +1,7 @@
 // d3-three — a stroked-circle look for a sphere: the notebook draws internal nodes
 // as `fill #fff, stroke #000`, and a white sphere on a white page has no edge.
 // This darkens the sphere's silhouette with a view-dependent Fresnel term in
-// TSL (`colorNode`), so the mark stays one Mesh per datum (HANDOFF §C.11):
+// TSL (`colorNode`), so the mark stays one Mesh per datum (the counts gate):
 // no second back-face sphere, no ring geometry.
 
 import { color, dot, float, mix, normalView, positionViewDirection, pow, saturate } from 'three/tsl';

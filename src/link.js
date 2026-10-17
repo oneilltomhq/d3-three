@@ -4,7 +4,8 @@
 // two control points are the endpoints pushed to the half-way plane along one
 // axis (in d3 that axis is the depth axis, x on screen). `fatLine` turns a point
 // list into a Line2, which is a real screen-space-width line in the scene, not a
-// sprite or a canvas stroke (HANDOFF §B.8).
+// sprite or a canvas stroke (marks and links are never sprites, textures,
+// canvas-2D or CSS).
 
 import * as THREE from 'three';
 import { Line2 } from 'three/addons/lines/webgpu/Line2.js';

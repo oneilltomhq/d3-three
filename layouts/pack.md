@@ -102,7 +102,7 @@ packings of that many equal spheres in a sphere reach roughly 0.6. Time: `padded
   empty string (0 glyphs; 1678 glyphs in total). Text `d.data.name`,
   `Roboto-Regular`, colour `#333`, white halo (`outlineWidth 0.25`). `fontSize =
   min(8 px at the target distance, rMin) = 0.426` world units = 4.33 px in the
-  400×250 frame (readable at 1600×1000, `handoff/rung3/eyeball/`). Orientation is
+  400×250 frame (readable at 1600×1000, `--size 1600x1000`). Orientation is
   **baked**, not billboarded: `orient` returns camera A's initial quaternion
   `(−0.1632, 0.3368, 0.0594, 0.9254)` for every label, `billboard: false`, 0 flipped.
   Each label is `anchorX 'center'` and positioned at the leaf's world centre pushed

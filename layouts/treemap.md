@@ -5,7 +5,7 @@ partitions* lift: every one of the 252 nodes a slab on top of its parent's,
 package plinths 3.0 thick, leaf steps 0.7, camera 60°/40°, all gates green.
 The director eyeballed it and ruled the 3D added nothing to a treemap — the
 steps only hid rects and shifted labels — and issued the planar ruling
-(`handoff/rung0/LOG.md`, "Director ruling: planar lifts"). That variant is
+(README, "The ladder"). That variant is
 retired; this note describes what runs now.
 
 Source: `hierarchies/treemap.v2` (flare.json: 252 nodes, 220 leaves, height 4).

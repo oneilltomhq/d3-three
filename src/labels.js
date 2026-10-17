@@ -2,8 +2,9 @@
 //
 // One `Text` per `root.descendants()`, all drawn by one `BatchedText` (an
 // InstancedMesh of glyph quads sampling a single-channel SDF atlas built from
-// the font's real outlines). Labels are not marks (HANDOFF §C.11 counts nodes,
-// links and cells); they are the one billboard-like thing §B.8 allows — and
+// the font's real outlines). Labels are not marks (the counts gate counts nodes,
+// links and cells); they are the one billboard-like thing allowed, since marks
+// and links are never sprites, textures, canvas-2D or CSS — and
 // even then they are NOT billboarded by default: each page supplies an
 // `orient(node)` that puts the label in a plane that means something in that
 // layout (the cone's vertical plane, the blade's plane).

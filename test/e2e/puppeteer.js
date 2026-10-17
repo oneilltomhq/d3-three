@@ -16,9 +16,9 @@
 //     failure, printed red, like a diff failure; a page with no `window.d3three`
 //     is a failure;
 //   * `--twice`: render + screenshot each file twice and assert compare()
-//     finds 0 differing pixels (§D.18);
+//     finds 0 differing pixels;
 //   * `--size WxH` (rung 3): render at that size (still at viewScale 2, then
-//     downscaled) and write `handoff/rung3/eyeball/<file>-<W>x<H>.png` for the
+//     downscaled) and write `test/e2e/eyeball/<file>-<W>x<H>.png` for the
 //     user to look at. No reference is read or written, no marks/gates either:
 //     the 400x250 reference path is untouched.
 
@@ -140,7 +140,7 @@ async function main() {
 
 	}
 
-	if ( eyeball ) await fs.mkdir( 'handoff/rung3/eyeball', { recursive: true } );
+	if ( eyeball ) await fs.mkdir( 'test/e2e/eyeball', { recursive: true } );
 
 	const exactList = process.argv.slice( argvIndex )
 		.map( f => f.replace( '.html', '' ) );
@@ -180,7 +180,7 @@ async function main() {
 		// VK_DRIVER_FILES pointing at lavapipe, that flag makes Dawn fail to create a
 		// WebGPU adapter ("Failed to create WebGPU Context Provider"), so every page
 		// would silently drop to the WebGL2 backend. Replaced with the
-		// '--disable-vulkan-surface' of the HANDOFF flag list; WebGL still runs on
+		// '--disable-vulkan-surface'; WebGL still runs on
 		// ANGLE/Vulkan/lavapipe, WebGPU comes up on Dawn/SwiftShader.
 		'--disable-vulkan-surface',
 		// NOTE (rung 1): without these three, nothing a GPU canvas draws ever reaches
@@ -589,7 +589,7 @@ async function renderOnce( page, cleanPage, file ) {
 
 	if ( page.error !== undefined ) throw new Error( page.error );
 
-	/* d3-three report: marks, expected counts and gates (§C.13, §B.7-10) */
+	/* d3-three report: marks, expected counts and gates */
 
 	const hasAPI = await page.evaluate( () => typeof window.d3three === 'object' && window.d3three !== null );
 
@@ -739,7 +739,7 @@ async function checkFile( ctx, failedScreenshots, cleanPage, mode, file ) {
 
 			/* Eyeball render for the user: PNG at the requested size, nothing else touched */
 
-			const out = `handoff/rung3/eyeball/${ file }-${ eyeball.width }x${ eyeball.height }.png`;
+			const out = `test/e2e/eyeball/${ file }-${ eyeball.width }x${ eyeball.height }.png`;
 			const png = new PNG( { width: first.screenshot.width, height: first.screenshot.height } );
 			png.data = Buffer.from( first.screenshot.data );
 			await fs.writeFile( out, PNG.sync.write( png ) );
@@ -760,7 +760,7 @@ async function checkFile( ctx, failedScreenshots, cleanPage, mode, file ) {
 
 		if ( isTwice ) {
 
-			/* Two consecutive runs must be byte-identical (§D.18) */
+			/* Two consecutive runs must be byte-identical */
 
 			const second = await renderOnce( ctx.page, cleanPage, file );
 
@@ -860,7 +860,7 @@ async function checkFile( ctx, failedScreenshots, cleanPage, mode, file ) {
 
 		}
 
-		/* Gates (§B.7-10, §C.12) — a failing gate fails the test */
+		/* Gates — a failing gate fails the test */
 
 		for ( const line of formatGates( gates ) ) {
 

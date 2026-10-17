@@ -2,7 +2,7 @@
 //
 //   node tools/ref.js hierarchies/cluster.v2
 //
-// The visual anchor for an example (HANDOFF §C.15), never a grader.
+// The visual anchor for an example, never a grader.
 //
 // How it works, without pulling in the Observable runtime: a notebook module
 // declares each cell as a plain top-level function (`_chart`, `_data`, ...) and

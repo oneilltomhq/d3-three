@@ -12,8 +12,8 @@ Built as `examples/d3_sunburst.html`; this note is kept true to what runs.
 **Retired: the sphere.** The first build lifted the disc onto a sphere (angle →
 longitude, depth → colatitude band, value → radial thickness, 251 shell-sector
 solids, `src/shell.js`). The user eyeballed it and ruled that the third axis added
-nothing the disc did not already say; the director's ruling (handoff/rung0/LOG.md,
-"planar lifts") is to lift only where the third axis obviously wins and otherwise
+nothing the disc did not already say; the planar ruling (README, "The
+ladder") is to lift only where the third axis obviously wins and otherwise
 render the 2D chart faithfully inside the 3D world. `src/shell.js` stays in the tree
 for history; the page no longer imports it. What was learned there and still holds:
 outward extrusion of a sunburst cannot pass the picking gate (slivers hide behind

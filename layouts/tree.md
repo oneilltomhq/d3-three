@@ -81,7 +81,7 @@ in one `BatchedText`, 252).
   Orbiting 180° turns all 252 about their up axis (every blade is seen from
   its other face; upright always holds in a vertical plane);
   `tools/flip.js d3_tree` proves it and writes
-  `handoff/rung3/eyeball/d3_tree-flipped-1600x1000.png`.
+  `test/e2e/eyeball/d3_tree-flipped-1600x1000.png`.
 - `billboard: true` implemented, off. Labels are not marks, not pickable,
   `renderOrder 1`. Dumped to `marks/d3_tree.json` `labels[]` with the same
   fields as cluster.

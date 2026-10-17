@@ -13,7 +13,7 @@ radius, labelled every `tickStep(0, sum, 20)` = 5 000 with `formatPrefix(",.0", 
 
 Built as `examples/d3_chord.html`; this note is kept true to what runs.
 
-Class: **planar by ruling** (director, handoff/rung0/LOG.md). A chord diagram is a
+Class: **planar by ruling** (README, "The ladder"). A chord diagram is a
 ring and a set of ribbons through its centre; no third axis would say anything the
 disc does not. The chart is the notebook's, flat in the 3D world, orbitable and lit.
 

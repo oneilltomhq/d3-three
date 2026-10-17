@@ -1,3 +1,4 @@
 node_modules/
 .puppeteer_profile/
 test/e2e/output-screenshots/
+test/e2e/eyeball/

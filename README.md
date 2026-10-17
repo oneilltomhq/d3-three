@@ -121,11 +121,21 @@ added text labels through lib3's SDF text. After that the shared code was
 frozen, and each further chart was built on its own branch, which added files
 only, before being merged back.
 
-Every finished rung leaves five things behind: the page, its screenshot, its
-marks and gates JSON, its layout note, and an entry in
-`handoff/LADDER-FOR-THREE-RS.md` listing the d3 modules the chart needs and
-summarising its 3D layout. The briefs and logs for the rungs are in
-`handoff/`.
+Every finished rung leaves four things behind: the page
+(`examples/d3_<slug>.html`), its screenshot, its marks and gates JSON, and its
+layout note (`layouts/<slug>.md`), which says how the notebook's 2D layout was
+lifted into 3D and is kept true to what runs.
+
+The first charts were all lifted into 3D: a cone tree, a fan, a sphere. After
+the sunburst and the treemap were eyeballed, the 3D was judged to add nothing
+to them, and a ruling followed: lift a chart only where the third axis
+obviously wins (cluster, tree, bundling, force, pack, tree of life), and
+otherwise render the notebook's 2D chart faithfully, flat inside the 3D world,
+orbitable and lit, with labels in the plane where the notebook puts them. Four
+pages are planar: chord, sankey, sunburst and treemap. They call
+`register({ planar: true })`. The depth gate still reports its
+ratio but passes with the note "planar by ruling", every other gate applies
+unchanged, and `planar` is written into the marks JSON.
 
 ## Related projects
 
@@ -139,8 +149,8 @@ summarising its 3D layout. The briefs and logs for the rungs are in
   d3-three creates references for it to grade against later. three-rs
   renders on a different rasterizer, so it cannot match these screenshots
   pixel for pixel. Its contract is `marks/d3_<slug>.json` instead: every
-  datum's world position, link endpoints, and label pose.
-  `handoff/LADDER-FOR-THREE-RS.md` is written for the port.
+  datum's world position, link endpoints, and label pose. The layout notes
+  in `layouts/` describe each chart for the port.
 
 ## Licence
 

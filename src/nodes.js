@@ -1,5 +1,5 @@
 // d3-three — node marks for a d3 hierarchy: one Mesh(SphereGeometry) per
-// `root.descendants()` (HANDOFF §C.11), coloured the way the dendrogram
+// `root.descendants()` (the counts gate), coloured the way the dendrogram
 // notebooks colour them — internal nodes grey, leaves by their top-level
 // ancestor from `d3.schemeTableau10`, so the branches read apart in 3D.
 //

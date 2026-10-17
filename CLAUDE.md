@@ -1,5 +1,7 @@
 # d3-three
 
+This describes the maintainer's bare-repo worktree layout. A plain `git clone` works and needs none of it.
+
 Bare-repo worktree layout. `.bare/` is the repository; `main/` is always checked out on `main`; every other branch is a sibling directory named exactly after it: `d3-three/<branch>/`.
 
 Never `git switch`, `git checkout` or commit in `main/`. It is the clean copy to read and diff against.

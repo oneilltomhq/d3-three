@@ -14,7 +14,7 @@
 // and upright test in src/labels.js). It then
 // renders one frame at the given size (at viewScale 2, box-filtered down like
 // the harness eyeballs) and writes
-// `handoff/rung3/eyeball/<file>-flipped-<W>x<H>.png` for the director.
+// `test/e2e/eyeball/<file>-flipped-<W>x<H>.png` to look at.
 //
 // Exit 0 when update() at camera A touches nothing, the orbit turns at least
 // one label, and a second update() touches none.
@@ -171,8 +171,8 @@ try {
 	const png = Buffer.from( result.dataURL.slice( 'data:image/png;base64,'.length ), 'base64' );
 	const image = ( await Image.read( png ) ).scale( 1 / viewScale );
 
-	await fs.mkdir( 'handoff/rung3/eyeball', { recursive: true } );
-	const out = `handoff/rung3/eyeball/${ file }-${ noUpdate ? 'noupdate' : 'flipped' }-${ width }x${ height }.png`;
+	await fs.mkdir( 'test/e2e/eyeball', { recursive: true } );
+	const out = `test/e2e/eyeball/${ file }-${ noUpdate ? 'noupdate' : 'flipped' }-${ width }x${ height }.png`;
 	const outPng = new PNG( { width: image.width, height: image.height } );
 	outPng.data = Buffer.from( image.data );
 	await fs.writeFile( out, PNG.sync.write( outPng ) );

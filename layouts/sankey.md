@@ -12,7 +12,7 @@ and left of it on the right half.
 
 Built as `examples/d3_sankey.html`; this note is kept true to what runs.
 
-Class: **PLANAR by ruling** (`handoff/rung0/LOG.md`, director ruling on planar
+Class: **PLANAR by ruling** (README, "The ladder", the ruling on planar
 lifts): a sankey is a 2D flow diagram; a third axis has nothing to encode.
 
 ## Inputs: what the notebook's defaults are
@@ -119,7 +119,7 @@ right-half wrapper `{ data: node, children: [] }` (an "internal" node: end,
 
 Size on screen: 3.1 px em at 400×250 before foreshortening (the notebook's
 10 px in a 928 px chart is 1.1 % of the width; the same fraction here),
-~12.5 px at 1600×1000 — legible in `handoff/ladder/sankey-1600x1000.png`.
+~12.5 px at 1600×1000 — legible in `npm run e2e -- --size 1600x1000 d3_sankey`.
 Labels overlap in the dense left column exactly where the notebook's do
 (Biomass imports / Marine algae / Coal imports at 10 px pitch).
 
