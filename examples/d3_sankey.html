@@ -3,6 +3,7 @@
 	<head>
 		<title>d3-three - sankey, flat in the 3D world</title>
 		<meta charset="utf-8">
+		<link rel="icon" href="data:,">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<style>
 			body { margin: 0; background: #fff; overflow: hidden; }
@@ -16,14 +17,14 @@
 		<script type="importmap">
 			{
 				"imports": {
-					"three": "/build/three.webgpu.js",
-					"three/webgpu": "/build/three.webgpu.js",
-					"three/tsl": "/build/three.tsl.js",
-					"three/addons/": "/jsm/",
-					"d3": "/examples/jsm/vendor/d3.js",
-					"d3-sankey": "/examples/jsm/vendor/d3-sankey.js",
-					"d3-three": "/src/d3-three.js",
-					"lib3/sdf-text": "/lib3/sdfText.js"
+					"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+					"three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+					"three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+					"d3": "./jsm/vendor/d3.js",
+					"d3-sankey": "./jsm/vendor/d3-sankey.js",
+					"d3-three": "../src/d3-three.js",
+					"@oneilltom/lib3/sdf-text": "https://cdn.jsdelivr.net/npm/@oneilltom/lib3@0.5.0/dist/sdfText.js"
 				}
 			}
 		</script>
@@ -34,9 +35,9 @@
 			import * as d3 from 'd3';
 			import { sankey as d3sankey, sankeyJustify } from 'd3-sankey';
 			import { register } from 'd3-three';
-			import { frameCamera } from '/src/frame.js';
-			import { attachOrbit } from '/src/orbit.js';
-			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
+			import { frameCamera } from '../src/frame.js';
+			import { attachOrbit } from '../src/orbit.js';
+			import { hierarchyLabels, basisQuaternion } from '../src/labels.js';
 
 			let renderer, scene, camera, labels;
 
@@ -54,7 +55,7 @@
 			const LINK_STEP = 0.001;                   // per-link lift, in file order, so overlapping ribbons never z-fight
 			const LIFT = 0.012;                        // outlines and labels sit this far above a top face
 			const SAMPLES = 32;                        // straight segments per link edge
-			const FONT = '/examples/fonts/Roboto-Regular.ttf';
+			const FONT = './fonts/Roboto-Regular.ttf';
 			const LABEL_PX = 10;                       // the notebook's `font: 10px sans-serif`
 			const LABEL_PAD_PX = 6;                    // the notebook's `x1 + 6` / `x0 - 6`
 			const UP = [ 0, 1, 0 ];

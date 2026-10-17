@@ -28,7 +28,7 @@
 // harness is the proof that nothing time- or GPU-dependent leaks in.
 
 import * as THREE from 'three';
-import { BatchedText, Text } from 'lib3/sdf-text';
+import { BatchedText, Text } from '@oneilltom/lib3/sdf-text';
 
 // lib3's BatchedText places each glyph quad with a `positionNode` that reads
 // the per-instance `aGlyphBounds` attribute, and relies on three's InstanceNode

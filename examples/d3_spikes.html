@@ -3,6 +3,7 @@
 	<head>
 		<title>d3-three - spike map, spikes standing up</title>
 		<meta charset="utf-8">
+		<link rel="icon" href="data:,">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<style>
 			body { margin: 0; background: #fff; overflow: hidden; }
@@ -16,14 +17,14 @@
 		<script type="importmap">
 			{
 				"imports": {
-					"three": "/build/three.webgpu.js",
-					"three/webgpu": "/build/three.webgpu.js",
-					"three/tsl": "/build/three.tsl.js",
-					"three/addons/": "/jsm/",
-					"d3": "/examples/jsm/vendor/d3.js",
-					"topojson-client": "/examples/jsm/vendor/topojson-client.js",
-					"d3-three": "/src/d3-three.js",
-					"lib3/sdf-text": "/lib3/sdfText.js"
+					"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+					"three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+					"three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+					"d3": "./jsm/vendor/d3.js",
+					"topojson-client": "./jsm/vendor/topojson-client.js",
+					"d3-three": "../src/d3-three.js",
+					"@oneilltom/lib3/sdf-text": "https://cdn.jsdelivr.net/npm/@oneilltom/lib3@0.5.0/dist/sdfText.js"
 				}
 			}
 		</script>
@@ -34,11 +35,11 @@
 			import * as d3 from 'd3';
 			import * as topojson from 'topojson-client';
 			import { register } from 'd3-three';
-			import { frameCamera } from '/src/frame.js';
-			import { attachOrbit } from '/src/orbit.js';
-			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
-			import { VectorFont } from 'lib3/sdf-text';
-			import { spikeGeometry, groundGeometry } from '/src/spike.js';
+			import { frameCamera } from '../src/frame.js';
+			import { attachOrbit } from '../src/orbit.js';
+			import { hierarchyLabels, basisQuaternion } from '../src/labels.js';
+			import { VectorFont } from '@oneilltom/lib3/sdf-text';
+			import { spikeGeometry, groundGeometry } from '../src/spike.js';
 
 			let renderer, scene, camera, labels;
 
@@ -56,7 +57,7 @@
 			const SPIKE_W = 7 * S;                    // the notebook's 7 px base width (0.144)
 			const SPIKE_MAX = 6;                      // the notebook's 200 px range, in world units
 			const TIP = 0.05;                         // the mark origin sits this fraction of the height below the apex
-			const FONT = '/examples/fonts/Roboto-Regular.ttf';
+			const FONT = './fonts/Roboto-Regular.ttf';
 			const LEGEND_PX = 10;                     // the notebook's 10px sans-serif legend
 			const LEGEND_AT = [ 886, 592 ];           // the notebook's translate(886,592)
 			const LEGEND_STEP = 20;                   // the notebook's 20 px between legend spikes

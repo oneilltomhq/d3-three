@@ -10,13 +10,17 @@
 //   /gallery/*                               -> $GALLERY_DIR/*
 //   /lib3/*                                  -> @oneilltom/lib3 dist/* (sdf-text, rung 3)
 //
-// The `/build/three.webgpu.js` path is kept verbatim so the harness's request
-// interception (copied from three) still matches.
+// The pages' import maps point three and lib3 at pinned jsDelivr builds, so the
+// pages also work as plain static files. This server rewrites those CDN
+// prefixes in every HTML file it serves back to the local mounts above, so
+// `npm run serve` and the e2e harness load $THREE_DIR and node_modules/lib3 and
+// never touch the network. The rewritten `/build/three.webgpu.js` path is the
+// one the harness's request interception (copied from three) matches.
 
 import http from 'http';
 import path from 'path';
 import os from 'os';
-import { createReadStream, existsSync, statSync, readdirSync } from 'fs';
+import { createReadStream, existsSync, statSync, readdirSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname( fileURLToPath( import.meta.url ) );
@@ -25,6 +29,20 @@ const repoRoot = path.resolve( __dirname, '../..' );
 const THREE_DIR = path.resolve( process.env.THREE_DIR || path.join( os.homedir(), 'src/vendor/three.js' ) );
 const GALLERY_DIR = path.resolve( process.env.GALLERY_DIR || path.join( os.homedir(), 'src/vendor/d3-gallery/notebooks' ) );
 const LIB3_DIST = path.join( repoRoot, 'node_modules/@oneilltom/lib3/dist' );
+
+// CDN prefix in a page's import map -> local mount. Any pinned version maps.
+const cdnRewrites = [
+	[ /https:\/\/cdn\.jsdelivr\.net\/npm\/three@[^/"]+\/build\//g, '/build/' ],
+	[ /https:\/\/cdn\.jsdelivr\.net\/npm\/three@[^/"]+\/examples\/jsm\//g, '/jsm/' ],
+	[ /https:\/\/cdn\.jsdelivr\.net\/npm\/@oneilltom\/lib3@[^/"]+\/dist\//g, '/lib3/' ]
+];
+
+export function localizeHtml( html ) {
+
+	for ( const [ cdn, local ] of cdnRewrites ) html = html.replace( cdn, local );
+	return html;
+
+}
 
 const mounts = [
 	{ prefix: '/build/', root: path.join( THREE_DIR, 'build' ) },
@@ -189,6 +207,15 @@ ${items}
 
 		const ext = path.extname( filePath ).toLowerCase();
 		const contentType = mimeTypes[ ext ] || 'application/octet-stream';
+
+		if ( ext === '.html' ) {
+
+			const body = Buffer.from( localizeHtml( readFileSync( filePath, 'utf8' ) ) );
+			res.writeHead( 200, { 'Content-Length': body.length, 'Content-Type': contentType } );
+			res.end( body );
+			return;
+
+		}
 		const stat = statSync( filePath );
 		const fileSize = stat.size;
 		const range = req.headers.range;

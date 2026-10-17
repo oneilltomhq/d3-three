@@ -3,6 +3,7 @@
 	<head>
 		<title>d3-three - cluster dendrogram as a cone tree</title>
 		<meta charset="utf-8">
+		<link rel="icon" href="data:,">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<style>
 			body { margin: 0; background: #fff; overflow: hidden; }
@@ -16,13 +17,13 @@
 		<script type="importmap">
 			{
 				"imports": {
-					"three": "/build/three.webgpu.js",
-					"three/webgpu": "/build/three.webgpu.js",
-					"three/tsl": "/build/three.tsl.js",
-					"three/addons/": "/jsm/",
-					"d3": "/examples/jsm/vendor/d3.js",
-					"d3-three": "/src/d3-three.js",
-					"lib3/sdf-text": "/lib3/sdfText.js"
+					"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+					"three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+					"three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+					"d3": "./jsm/vendor/d3.js",
+					"d3-three": "../src/d3-three.js",
+					"@oneilltom/lib3/sdf-text": "https://cdn.jsdelivr.net/npm/@oneilltom/lib3@0.5.0/dist/sdfText.js"
 				}
 			}
 		</script>
@@ -32,11 +33,11 @@
 			import * as THREE from 'three/webgpu';
 			import * as d3 from 'd3';
 			import { register } from 'd3-three';
-			import { linkCurve, fatLine, lineMaterial } from '/src/link.js';
-			import { frameCamera } from '/src/frame.js';
-			import { attachOrbit } from '/src/orbit.js';
-			import { hierarchyNodes } from '/src/nodes.js';
-			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
+			import { linkCurve, fatLine, lineMaterial } from '../src/link.js';
+			import { frameCamera } from '../src/frame.js';
+			import { attachOrbit } from '../src/orbit.js';
+			import { hierarchyNodes } from '../src/nodes.js';
+			import { hierarchyLabels, basisQuaternion } from '../src/labels.js';
 
 			let renderer, scene, camera, labels;
 
@@ -154,7 +155,7 @@
 				const fontSize = Math.min( LABEL_PX / pxPerUnit, LEAF_PITCH );
 
 				labels = await hierarchyLabels( root, ids, position, {
-					font: '/examples/fonts/Roboto-Regular.ttf',
+					font: './fonts/Roboto-Regular.ttf',
 					fontSize,
 					color: 0x333333,
 					outlineWidth: 0.25, outlineColor: 0xffffff,

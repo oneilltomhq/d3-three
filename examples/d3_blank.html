@@ -3,6 +3,7 @@
 	<head>
 		<title>d3-three - blank</title>
 		<meta charset="utf-8">
+		<link rel="icon" href="data:,">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<style>
 			body { margin: 0; background: #000; overflow: hidden; }
@@ -15,12 +16,12 @@
 		<script type="importmap">
 			{
 				"imports": {
-					"three": "/build/three.webgpu.js",
-					"three/webgpu": "/build/three.webgpu.js",
-					"three/tsl": "/build/three.tsl.js",
-					"three/addons/": "/jsm/",
-					"d3": "/examples/jsm/vendor/d3.js",
-					"d3-three": "/src/d3-three.js"
+					"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+					"three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+					"three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+					"d3": "./jsm/vendor/d3.js",
+					"d3-three": "../src/d3-three.js"
 				}
 			}
 		</script>

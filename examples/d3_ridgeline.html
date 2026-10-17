@@ -3,6 +3,7 @@
 	<head>
 		<title>d3-three - ridgeline plot, series along z</title>
 		<meta charset="utf-8">
+		<link rel="icon" href="data:,">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<style>
 			body { margin: 0; background: #fff; overflow: hidden; }
@@ -16,13 +17,13 @@
 		<script type="importmap">
 			{
 				"imports": {
-					"three": "/build/three.webgpu.js",
-					"three/webgpu": "/build/three.webgpu.js",
-					"three/tsl": "/build/three.tsl.js",
-					"three/addons/": "/jsm/",
-					"d3": "/examples/jsm/vendor/d3.js",
-					"d3-three": "/src/d3-three.js",
-					"lib3/sdf-text": "/lib3/sdfText.js"
+					"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+					"three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+					"three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
+					"d3": "./jsm/vendor/d3.js",
+					"d3-three": "../src/d3-three.js",
+					"@oneilltom/lib3/sdf-text": "https://cdn.jsdelivr.net/npm/@oneilltom/lib3@0.5.0/dist/sdfText.js"
 				}
 			}
 		</script>
@@ -32,12 +33,12 @@
 			import * as THREE from 'three/webgpu';
 			import * as d3 from 'd3';
 			import { register } from 'd3-three';
-			import { fatLine, lineMaterial } from '/src/link.js';
-			import { sampleCurve, ridgeGeometry, summit } from '/src/ridge.js';
-			import { frameCamera } from '/src/frame.js';
-			import { attachOrbit } from '/src/orbit.js';
-			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
-			import { VectorFont } from 'lib3/sdf-text';
+			import { fatLine, lineMaterial } from '../src/link.js';
+			import { sampleCurve, ridgeGeometry, summit } from '../src/ridge.js';
+			import { frameCamera } from '../src/frame.js';
+			import { attachOrbit } from '../src/orbit.js';
+			import { hierarchyLabels, basisQuaternion } from '../src/labels.js';
+			import { VectorFont } from '@oneilltom/lib3/sdf-text';
 
 			let renderer, scene, camera, labels;
 
@@ -58,7 +59,7 @@
 			const EXTENT = 20;                       // world units of the x axis (the notebook's 788 px)
 			const S = EXTENT / ( WIDTH - MARGIN.left - MARGIN.right ); // notebook px -> world units
 			const THICK_RATIO = 0.4;                 // slab thickness as a fraction of the z pitch
-			const FONT = '/examples/fonts/Roboto-Regular.ttf';
+			const FONT = './fonts/Roboto-Regular.ttf';
 			const FONT_PX = 12;                      // the notebook's axis font is 10px; 12 is the most the row pitch
 			                                         // allows flat labels (ascender to descender 1.17 em < 15.57 px)
 			const TICK_PX = 6, TICK_PAD_PX = 3, NAME_PAD_PX = 4; // d3.axis defaults / the notebook's tickPadding(4)
@@ -96,7 +97,7 @@
 				// FileAttachment("traffic.csv").csv({typed: true}). traffic.csv is not
 				// committed (its licence is unchecked): it comes from the d3-gallery
 				// mirror the server mounts at /gallery/ ($GALLERY_DIR).
-				const traffic = d3.csvParse( await fetch( '/gallery/areas/ridgeline-plot/files/traffic.csv' ).then( r => r.text() ), d3.autoType );
+				const traffic = d3.csvParse( await fetch( '../gallery/areas/ridgeline-plot/files/traffic.csv' ).then( r => r.text() ), d3.autoType );
 
 				// Prepare the series (verbatim).
 				const dates = Array.from( d3.group( traffic, d => + d.date ).keys() ).sort( d3.ascending );

@@ -490,6 +490,16 @@ async function preparePage( page, injection, builds, errorMessages ) {
 
 		}
 
+		// e2e is offline: server.js maps the pages' CDN import-map URLs to the
+		// local checkout, so any request that still leaves localhost is a bug.
+		if ( /^https?:/.test( url ) && ! url.startsWith( `http://localhost:${ port }/` ) ) {
+
+			page.error = `${ page.file }: network request outside localhost: ${ url }`;
+			await request.abort();
+			return;
+
+		}
+
 		await request.continue();
 
 	} );

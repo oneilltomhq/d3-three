@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>d3-three</title>
+		<meta charset="utf-8">
+		<link rel="icon" href="data:,">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<meta name="color-scheme" content="light dark">
+		<style>
+			:root { --bg: #fff; --fg: #222; --muted: #666; --card: #f4f4f4; --edge: #ddd; }
+			@media (prefers-color-scheme: dark) {
+				:root { --bg: #111; --fg: #eee; --muted: #999; --card: #1c1c1c; --edge: #333; }
+			}
+			body { margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
+			main { max-width: 1280px; margin: 0 auto; }
+			h1 { font-size: 1.5em; font-weight: 600; margin: 0 0 4px; }
+			p { color: var(--muted); margin: 0 0 24px; max-width: 46em; }
+			p a { color: inherit; }
+			.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+			.card { display: block; background: var(--card); border: 1px solid var(--edge); border-radius: 6px; overflow: hidden; color: inherit; text-decoration: none; }
+			.card:hover { border-color: var(--muted); }
+			.card img { display: block; width: 100%; height: auto; aspect-ratio: 400 / 250; background: #fff; }
+			.card span { display: block; padding: 8px 10px; }
+		</style>
+	</head>
+	<body>
+		<main>
+			<h1>d3-three</h1>
+			<p>Eighteen charts from the <a href="https://observablehq.com/@d3/gallery">D3 gallery</a> ported to three.js <code>WebGPURenderer</code>. Each picture is the screenshot the end-to-end harness grades against; open a page in a WebGPU browser to orbit it. The globe and ridgeline pages read two data files that are not published here yet, so only their screenshots show. Source: <a href="https://github.com/oneilltomhq/d3-three">github.com/oneilltomhq/d3-three</a>.</p>
+			<div class="grid">
+			<a class="card" href="./d3_cluster.html"><img src="./screenshots/d3_cluster.jpg" width="400" height="250" alt="" loading="lazy"><span>cluster dendrogram → cone tree</span></a>
+			<a class="card" href="./d3_tree.html"><img src="./screenshots/d3_tree.jpg" width="400" height="250" alt="" loading="lazy"><span>tidy tree → radial fan of tidy planes</span></a>
+			<a class="card" href="./d3_bundling.html"><img src="./screenshots/d3_bundling.jpg" width="400" height="250" alt="" loading="lazy"><span>hierarchical edge bundling → sphere</span></a>
+			<a class="card" href="./d3_force.html"><img src="./screenshots/d3_force.jpg" width="400" height="250" alt="" loading="lazy"><span>force-directed graph → d3-force-3d</span></a>
+			<a class="card" href="./d3_pack.html"><img src="./screenshots/d3_pack.jpg" width="400" height="250" alt="" loading="lazy"><span>circle packing → sphere packing</span></a>
+			<a class="card" href="./d3_sunburst.html"><img src="./screenshots/d3_sunburst.jpg" width="400" height="250" alt="" loading="lazy"><span>sunburst (flat)</span></a>
+			<a class="card" href="./d3_treemap.html"><img src="./screenshots/d3_treemap.jpg" width="400" height="250" alt="" loading="lazy"><span>treemap (flat)</span></a>
+			<a class="card" href="./d3_tree-of-life.html"><img src="./screenshots/d3_tree-of-life.jpg" width="400" height="250" alt="" loading="lazy"><span>tree of life → cylinder</span></a>
+			<a class="card" href="./d3_force-tree.html"><img src="./screenshots/d3_force-tree.jpg" width="400" height="250" alt="" loading="lazy"><span>force-directed tree → d3-force-3d</span></a>
+			<a class="card" href="./d3_disjoint.html"><img src="./screenshots/d3_disjoint.jpg" width="400" height="250" alt="" loading="lazy"><span>disjoint force-directed graph → d3-force-3d</span></a>
+			<a class="card" href="./d3_chord.html"><img src="./screenshots/d3_chord.jpg" width="400" height="250" alt="" loading="lazy"><span>chord diagram (flat)</span></a>
+			<a class="card" href="./d3_splom.html"><img src="./screenshots/d3_splom.jpg" width="400" height="250" alt="" loading="lazy"><span>scatterplot matrix → one 3D scatter</span></a>
+			<a class="card" href="./d3_grouped-bars.html"><img src="./screenshots/d3_grouped-bars.jpg" width="400" height="250" alt="" loading="lazy"><span>grouped bar chart → bar matrix</span></a>
+			<a class="card" href="./d3_spikes.html"><img src="./screenshots/d3_spikes.jpg" width="400" height="250" alt="" loading="lazy"><span>spike map, spikes standing up</span></a>
+			<a class="card" href="./d3_radial-bars.html"><img src="./screenshots/d3_radial-bars.jpg" width="400" height="250" alt="" loading="lazy"><span>radial stacked bars, stacks lifted</span></a>
+			<a class="card" href="./d3_ridgeline.html"><img src="./screenshots/d3_ridgeline.jpg" width="400" height="250" alt="" loading="lazy"><span>ridgeline plot, series along z</span></a>
+			<a class="card" href="./d3_sankey.html"><img src="./screenshots/d3_sankey.jpg" width="400" height="250" alt="" loading="lazy"><span>sankey (flat)</span></a>
+			<a class="card" href="./d3_globe.html"><img src="./screenshots/d3_globe.jpg" width="400" height="250" alt="" loading="lazy"><span>world choropleth → globe</span></a>
+			</div>
+		</main>
+	</body>
+</html>

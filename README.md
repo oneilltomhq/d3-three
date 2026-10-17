@@ -86,11 +86,25 @@ npm run determinism  # check the injected Math.random, clocks and RAF
 npm test             # layout invariants for src/pack3.js
 ```
 
+The pages are plain static files with an ordinary three.js import map:
+`three`, `three/webgpu`, `three/tsl` and `three/addons/` point at three
+0.186.1 on jsDelivr, `@oneilltom/lib3/sdf-text` at lib3 0.5.0 on jsDelivr, and
+everything else (`d3`, `d3-three`, `src/`, fonts, data) is relative to the
+page. Any static server works, with network access:
+
+```bash
+python3 -m http.server 8000   # from the repo root
+# http://localhost:8000/examples/  lists the pages
+```
+
+`npm run serve` and the e2e harness grade against the local checkout instead.
 The server mounts this repo at `/`, `$THREE_DIR/build` at `/build/`,
 `$THREE_DIR/examples/jsm` at `/jsm/`, `$GALLERY_DIR` at `/gallery/` and the
-lib3 package's `dist/` at `/lib3/`. Each page's importmap resolves `three`,
-`three/addons/`, `d3` and `lib3/sdf-text` against those mounts. Open the pages
-in a WebGPU browser to orbit them.
+lib3 package's `dist/` at `/lib3/`, and rewrites the jsDelivr prefixes in every
+HTML page it serves to those mounts. So the pages pin three 0.186.1 from the
+CDN, while e2e renders whatever three is in `$THREE_DIR`, offline; the harness
+fails a page that makes any request outside localhost. Open the pages in a
+WebGPU browser to orbit them.
 
 `npm run e2e` loads each page under three.js's `deterministic-injection.js`,
 which seeds `Math.random`, freezes the clocks and fires one animation frame.
