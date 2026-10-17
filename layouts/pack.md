@@ -128,7 +128,7 @@ two siblings overlap (distance ≥ r_i + r_j − 1e-9), every child inside its p
 enclosing sphere tight, 252 nodes well under a second, plus synthetic hierarchies
 (12², a 100-way fan-out past the nearest-32 cap, 3⁴) and edge cases.
 
-`src/d33.js` (gate change for this rung, on top of rung0's per-camera sampling):
+`src/d3-three.js` (gate change for this rung, on top of rung0's per-camera sampling):
 picking samples are drawn from the pickable node marks (`sampleSet: 'pickables'`,
 falling back to all node marks when no pickable is a node mark), and a visibility
 pre-pass raycast discards, per camera, every candidate whose centre is intercepted

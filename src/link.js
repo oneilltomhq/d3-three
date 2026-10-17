@@ -1,4 +1,4 @@
-// d33 — link primitive: one fat line per hierarchy link.
+// d3-three — link primitive: one fat line per hierarchy link.
 //
 // `linkCurve` is the 3D analogue of d3's `linkHorizontal`: a cubic bezier whose
 // two control points are the endpoints pushed to the half-way plane along one

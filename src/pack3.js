@@ -1,4 +1,4 @@
-// d33 — sphere packing for a d3 hierarchy: the 3D lift of `d3.pack()`
+// d3-three — sphere packing for a d3 hierarchy: the 3D lift of `d3.pack()`
 // (layouts/pack.md). Volume, not area, is proportional to value, and every
 // internal node is a sphere enclosing its children's spheres.
 //

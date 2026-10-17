@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 	<head>
-		<title>d33 - treemap, flat in the 3D world</title>
+		<title>d3-three - treemap, flat in the 3D world</title>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<style>
@@ -11,7 +11,7 @@
 	</head>
 	<body>
 
-		<div id="info">d33 - d3 treemap (flare), the notebook's chart rendered flat inside the 3D world (planar by ruling)</div>
+		<div id="info">d3-three - d3 treemap (flare), the notebook's chart rendered flat inside the 3D world (planar by ruling)</div>
 
 		<script type="importmap">
 			{
@@ -21,7 +21,7 @@
 					"three/tsl": "/build/three.tsl.js",
 					"three/addons/": "/jsm/",
 					"d3": "/examples/jsm/vendor/d3.js",
-					"d33": "/src/d33.js",
+					"d3-three": "/src/d3-three.js",
 					"lib3/sdf-text": "/lib3/sdfText.js"
 				}
 			}
@@ -31,7 +31,7 @@
 
 			import * as THREE from 'three/webgpu';
 			import * as d3 from 'd3';
-			import { register } from 'd33';
+			import { register } from 'd3-three';
 			import { frameCamera } from '/src/frame.js';
 			import { attachOrbit } from '/src/orbit.js';
 			import { hierarchyLabels, basisQuaternion } from '/src/labels.js';
@@ -65,14 +65,14 @@
 						const adapter = await navigator.gpu.requestAdapter();
 						const info = adapter ? adapter.info : null;
 
-						window.__d33AdapterInfo = info ? {
+						window.__d3threeAdapterInfo = info ? {
 							vendor: info.vendor, architecture: info.architecture,
 							device: info.device, description: info.description
 						} : null;
 
 					} catch ( e ) {
 
-						window.__d33AdapterInfo = { error: String( e ) };
+						window.__d3threeAdapterInfo = { error: String( e ) };
 
 					}
 
@@ -298,13 +298,13 @@
 
 				await renderer.init();
 
-				console.log( 'd33 backend:', renderer.backend.constructor.name,
+				console.log( 'd3-three backend:', renderer.backend.constructor.name,
 					'fontSize:', fontSize.toFixed( 3 ), 'px/unit:', pxPerUnit.toFixed( 2 ),
 					'cells:', marks.length, 'leaves:', leaves.length,
 					'labels:', labels.count, 'flipped:', labels.flipped );
 
 				const controls = attachOrbit( camera, renderer.domElement, target );
-				window.d33dev = { camera, controls, labels };
+				window.d3threeDev = { camera, controls, labels };
 
 				register( {
 					renderer, scene, camera, marks, target,

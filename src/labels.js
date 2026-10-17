@@ -1,4 +1,4 @@
-// d33 — text labels for a d3 hierarchy, via lib3's SDF text (rung 3).
+// d3-three — text labels for a d3 hierarchy, via lib3's SDF text (rung 3).
 //
 // One `Text` per `root.descendants()`, all drawn by one `BatchedText` (an
 // InstancedMesh of glyph quads sampling a single-channel SDF atlas built from

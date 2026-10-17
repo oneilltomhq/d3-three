@@ -94,7 +94,7 @@ Sphere axis = up. fov 40, elevation 25°, azimuth 30°, fill 0.85, fitted to the
 projected nodes + label tips (three refit iterations; the em is at its pitch cap
 so it does not move). Fixed; one frame.
 
-**Picking (the d33.js change).** A mark may carry `normal`. For each camera the
+**Picking (the d3-three.js change).** A mark may carry `normal`. For each camera the
 gate samples up to 20 marks from those whose `normal` is absent or faces the
 camera (`dot(normal, camera − mark) > 0`); leaves on the far side of the sphere
 would otherwise be raycast at their own pixel and hit the near side. Internal

@@ -96,7 +96,7 @@ PerspectiveCamera fov 40, elevation 30°, azimuth 9°, fill 0.85 via
 
 ## Primitives for `src/`
 
-Reuses `link.js`, `frame.js`, `orbit.js`, `d33.js` unchanged. The node/colour
+Reuses `link.js`, `frame.js`, `orbit.js`, `d3-three.js` unchanged. The node/colour
 code from rung 1 was lifted into **`src/nodes.js`** (`hierarchyNodes(root,
 position, options)` → `{ group, marks, ids, colour }`) and `d3_cluster.html`
 now uses it too, still at Diff 0.0%. Rung 3 added `src/labels.js` and the

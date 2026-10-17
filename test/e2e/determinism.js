@@ -233,7 +233,7 @@ const served = await page.evaluate( async () => {
 console.log( '\n== 4. served builds (through the harness interception) ==' );
 console.log( JSON.stringify( served, null, '\t' ) );
 
-const env = await page.evaluate( () => window.d33 ? window.d33.report().env : null );
+const env = await page.evaluate( () => window.d3three ? window.d3three.report().env : null );
 
 console.log( '\n== 7. WebGPU backend ==' );
 console.log( JSON.stringify( env, null, '\t' ) );

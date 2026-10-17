@@ -127,7 +127,7 @@ render is one frame.
 ## Primitives for `src/`
 
 `src/link.js` (`linkCurve`, `fatLine`, `lineMaterial`), `src/frame.js`
-(`frameCamera`), `src/orbit.js` (`attachOrbit`), `src/d33.js` registration with
+(`frameCamera`), `src/orbit.js` (`attachOrbit`), `src/d3-three.js` registration with
 `pickables` and, since rung 3, `labels`; `src/labels.js` (`hierarchyLabels`,
 `basisQuaternion`) on lib3 `sdf-text`.
 

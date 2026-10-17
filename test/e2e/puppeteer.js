@@ -11,9 +11,9 @@
 // Added:
 //   * builds are read from $THREE_DIR/build (the vendored three.js), served at
 //     the same `/build/*` URLs so the interception still matches;
-//   * after the screenshot, `window.d33.report()` is written to
+//   * after the screenshot, `window.d3three.report()` is written to
 //     `marks/<file>.json` and `gates/<file>.json`; a failing gate is a test
-//     failure, printed red, like a diff failure; a page with no `window.d33`
+//     failure, printed red, like a diff failure; a page with no `window.d3three`
 //     is a failure;
 //   * `--twice`: render + screenshot each file twice and assert compare()
 //     finds 0 differing pixels (§D.18);
@@ -497,7 +497,7 @@ async function preparePage( page, injection, builds, errorMessages ) {
 }
 
 /* Load, render and screenshot one page once. Returns the raw PNG buffer, the
-   downscaled Image and the d33 report. */
+   downscaled Image and the d3-three report. */
 
 async function renderOnce( page, cleanPage, file ) {
 
@@ -589,13 +589,13 @@ async function renderOnce( page, cleanPage, file ) {
 
 	if ( page.error !== undefined ) throw new Error( page.error );
 
-	/* d33 report: marks, expected counts and gates (§C.13, §B.7-10) */
+	/* d3-three report: marks, expected counts and gates (§C.13, §B.7-10) */
 
-	const hasAPI = await page.evaluate( () => typeof window.d33 === 'object' && window.d33 !== null );
+	const hasAPI = await page.evaluate( () => typeof window.d3three === 'object' && window.d3three !== null );
 
-	if ( ! hasAPI ) throw new Error( `no d33 API in file: ${ file }` );
+	if ( ! hasAPI ) throw new Error( `no d3-three API in file: ${ file }` );
 
-	const report = await page.evaluate( () => window.d33.report() );
+	const report = await page.evaluate( () => window.d3three.report() );
 
 	return { png, screenshot, report, elapsed };
 
@@ -617,7 +617,7 @@ async function grabCanvas( page ) {
 
 	await page.evaluate( async () => {
 
-		const state = window.d33 ? window.d33.state : null;
+		const state = window.d3three ? window.d3three.state : null;
 		const renderer = state ? state.renderer : null;
 
 		if ( ! renderer ) return;
@@ -631,7 +631,7 @@ async function grabCanvas( page ) {
 
 	const dataURL = await page.evaluate( () => {
 
-		const renderer = window.d33 && window.d33.state ? window.d33.state.renderer : null;
+		const renderer = window.d3three && window.d3three.state ? window.d3three.state.renderer : null;
 		const canvas = ( renderer && renderer.domElement ) || document.querySelector( 'canvas' );
 
 		if ( ! canvas ) return null;
@@ -733,7 +733,7 @@ async function checkFile( ctx, failedScreenshots, cleanPage, mode, file ) {
 		const gates = first.report.gates;
 		const env = first.report.env;
 
-		console.log( `[d33] ${ file }: backend=${ env.backend } navigator.gpu=${ env.hasNavigatorGPU } adapter=${ JSON.stringify( env.adapterInfo ) }` );
+		console.log( `[d3-three] ${ file }: backend=${ env.backend } navigator.gpu=${ env.hasNavigatorGPU } adapter=${ JSON.stringify( env.adapterInfo ) }` );
 
 		if ( eyeball ) {
 

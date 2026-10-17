@@ -1,4 +1,4 @@
-// d33 — GeoJSON polygons as meshes on a sphere (layouts/globe.md).
+// d3-three — GeoJSON polygons as meshes on a sphere (layouts/globe.md).
 //
 // The world choropleth's countries are GeoJSON (Multi)Polygons in degrees of
 // longitude and latitude. Lifted onto a globe, each country becomes one Mesh:

@@ -1,4 +1,4 @@
-// d33 — three axes on the silhouette edges of a cube, for a lifted scatter
+// d3-three — three axes on the silhouette edges of a cube, for a lifted scatter
 // (splom). The 3D analogue of the notebook's `axisBottom` / `axisLeft` with
 // `tickSize` spanning the whole chart: the scale's tick values as flat text
 // labels just outside the cube, the column names as axis titles, and faint

@@ -60,7 +60,7 @@ elevation, sees the whole disc (eligible 251 / 251). Fixed; one frame.
 251/251 · angle 0.448 / 0.551 · picking 20/20 from both cameras (251 / 251 eligible)
 · labels 93/93. `e2e:twice` 0 px.
 
-**Harness changes carried by this rung:** `src/d33.js` — the counts gate compares
+**Harness changes carried by this rung:** `src/d3-three.js` — the counts gate compares
 `cell` marks against `expected.cells` (default 0); angle and picking run on nodes
 and cells, picking reports `eligibleA/B`; the labels gate honours `expected.labels`;
 `register({ planar: true })` makes the depth gate pass with `note: 'planar by

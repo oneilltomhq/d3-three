@@ -1,6 +1,6 @@
 # Rung 0 log
 
-Worker: Opus, 2026-09-12, branch `rung0`, worktree `d33/rung0`.
+Worker: Opus, 2026-09-12, branch `rung0`, worktree `d3-three/rung0`.
 Goal (HANDOFF §E.21): a copy of Three's e2e harness runs against this repo,
 deterministic injection is proven, and a blank page fails the depth gate honestly.
 
@@ -150,12 +150,12 @@ only in `three.core.js` (4 hits, all in `generateUUID`), which
 ### 5. Two consecutive runs are identical
 
 ```
-> d33@0.0.0 e2e:twice
+> d3-three@0.0.0 e2e:twice
 > VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json node test/e2e/puppeteer.js --twice d3_blank
 
 WebGPU adapter: {"vendor":"google","architecture":"swiftshader","device":"","description":""} (attempt 1)
-[Browser] d3_blank: JSHandle:d33 backend: JSHandle:WebGPUBackend JSHandle:navigator.gpu: JSHandle:true JSHandle:adapter: JSHandle:{"vendor":"google","architecture":"swiftshader","device":"","description":""}
-[d33] d3_blank: backend=WebGPUBackend navigator.gpu=true adapter={"vendor":"google","architecture":"swiftshader","device":"","description":""}
+[Browser] d3_blank: JSHandle:d3-three backend: JSHandle:WebGPUBackend JSHandle:navigator.gpu: JSHandle:true JSHandle:adapter: JSHandle:{"vendor":"google","architecture":"swiftshader","device":"","description":""}
+[d3-three] d3_blank: backend=WebGPUBackend navigator.gpu=true adapter={"vendor":"google","architecture":"swiftshader","device":"","description":""}
 [twice] d3_blank: sha256(test/e2e/output-screenshots/d3_blank-run1.png) = 52df94d11f6b9ed1d0c64935f4772b7b74b6772f890b50af28041fa2d0fc6dc0
 [twice] d3_blank: sha256(test/e2e/output-screenshots/d3_blank-run2.png) = 52df94d11f6b9ed1d0c64935f4772b7b74b6772f890b50af28041fa2d0fc6dc0
 Two runs identical: 0 differing pixels in file: d3_blank
@@ -169,11 +169,11 @@ Both raw 800x500 PNGs hash to
 ### 6. Reference made, then diffed: 0.0% but the run still FAILS on the gates
 
 ```
-> d33@0.0.0 e2e:make
+> d3-three@0.0.0 e2e:make
 > VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json node test/e2e/puppeteer.js --make d3_blank
 
 WebGPU adapter: {"vendor":"google","architecture":"swiftshader","device":"","description":""} (attempt 1)
-[d33] d3_blank: backend=WebGPUBackend navigator.gpu=true adapter={"vendor":"google","architecture":"swiftshader","device":"","description":""}
+[d3-three] d3_blank: backend=WebGPUBackend navigator.gpu=true adapter={"vendor":"google","architecture":"swiftshader","device":"","description":""}
 Screenshot generated for file d3_blank
   gate depth: FAIL ratio=0.000 extents=[0.000, 0.000, 0.000]      <- yellow in --make
   gate counts: PASS nodes=0/0 links=0/0
@@ -183,12 +183,12 @@ Screenshot generated for file d3_blank
 ```
 
 ```
-> d33@0.0.0 e2e
+> d3-three@0.0.0 e2e
 > VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json node test/e2e/puppeteer.js d3_blank
 
 WebGPU adapter: {"vendor":"google","architecture":"swiftshader","device":"","description":""} (attempt 1)
-[Browser] d3_blank: JSHandle:d33 backend: JSHandle:WebGPUBackend JSHandle:navigator.gpu: JSHandle:true JSHandle:adapter: JSHandle:{"vendor":"google","architecture":"swiftshader","device":"","description":""}
-[d33] d3_blank: backend=WebGPUBackend navigator.gpu=true adapter={"vendor":"google","architecture":"swiftshader","device":"","description":""}
+[Browser] d3_blank: JSHandle:d3-three backend: JSHandle:WebGPUBackend JSHandle:navigator.gpu: JSHandle:true JSHandle:adapter: JSHandle:{"vendor":"google","architecture":"swiftshader","device":"","description":""}
+[d3-three] d3_blank: backend=WebGPUBackend navigator.gpu=true adapter={"vendor":"google","architecture":"swiftshader","device":"","description":""}
 Diff 0.0% in file: d3_blank (3.1s)
   gate depth: FAIL ratio=0.000 extents=[0.000, 0.000, 0.000]      <- red
   gate counts: PASS nodes=0/0 links=0/0
@@ -268,8 +268,8 @@ renders on WebGPU, the screenshot reproduces, and the depth gate fails honestly.
 ## Open questions for the director
 
 - SwiftShader vs lavapipe: three-rs will render with wgpu on lavapipe. If the
-  three-rs grader compares against d33's screenshots pixel for pixel, the
-  rasterizers differ. Is the d33 screenshot a visual anchor (fine) or a pixel
+  three-rs grader compares against d3-three's screenshots pixel for pixel, the
+  rasterizers differ. Is the d3-three screenshot a visual anchor (fine) or a pixel
   reference (needs thought)?
 - The picking gate currently raycasts `scene.children` recursively. Once examples
   add helpers/grids, those will occlude nodes; we may need a `pickables` layer in
@@ -277,7 +277,7 @@ renders on WebGPU, the screenshot reproduces, and the depth gate fails honestly.
 
 ## Director rulings (Fable, after review)
 
-- **Rasterizer.** d33 renders WebGPU on Dawn's SwiftShader; three-rs renders wgpu on
+- **Rasterizer.** d3-three renders WebGPU on Dawn's SwiftShader; three-rs renders wgpu on
   lavapipe. Screenshots are therefore visual anchors for three-rs, never a pixel grader.
   The pixel-exact contract between the two projects is `marks/d3_<slug>.json` (positions,
   counts, link endpoints). Record this in LADDER-FOR-THREE-RS.md when it is first written.

@@ -101,7 +101,7 @@ angle 0.448 / 0.551 · picking 20/20 from both cameras (251 / 251 eligible) · l
 ## Primitives for `src/`
 
 None new. The slab is `THREE.ExtrudeGeometry` over a `THREE.Shape` of the arc
-outline (~40 lines in the page); labels use `src/labels.js` as is. `src/d33.js`
+outline (~40 lines in the page); labels use `src/labels.js` as is. `src/d3-three.js`
 gains `planar` (state, `register` option, depth-gate note, report field) and the
 harness copies `planar` into both JSON files.
 

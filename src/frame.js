@@ -1,4 +1,4 @@
-// d33 — camera framing. Fixed camera per example (HANDOFF §D.17): no controls
+// d3-three — camera framing. Fixed camera per example (HANDOFF §D.17): no controls
 // state, no animation, just a deterministic position for a given set of marks.
 
 import * as THREE from 'three';

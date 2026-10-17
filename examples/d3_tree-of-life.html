@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 	<head>
-		<title>d33 - tree of life on a cylinder</title>
+		<title>d3-three - tree of life on a cylinder</title>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<style>
@@ -11,7 +11,7 @@
 	</head>
 	<body>
 
-		<div id="info">d33 - d3 tree of life (life.txt) on a cylinder: angle x cluster depth x branch length</div>
+		<div id="info">d3-three - d3 tree of life (life.txt) on a cylinder: angle x cluster depth x branch length</div>
 
 		<script type="importmap">
 			{
@@ -21,7 +21,7 @@
 					"three/tsl": "/build/three.tsl.js",
 					"three/addons/": "/jsm/",
 					"d3": "/examples/jsm/vendor/d3.js",
-					"d33": "/src/d33.js",
+					"d3-three": "/src/d3-three.js",
 					"lib3/sdf-text": "/lib3/sdfText.js"
 				}
 			}
@@ -31,7 +31,7 @@
 
 			import * as THREE from 'three/webgpu';
 			import * as d3 from 'd3';
-			import { register } from 'd33';
+			import { register } from 'd3-three';
 			import { fatLine, lineMaterial } from '/src/link.js';
 			import { stepCurve, cylinderPoint } from '/src/step.js';
 			import { frameCamera } from '/src/frame.js';
@@ -86,14 +86,14 @@
 						const adapter = await navigator.gpu.requestAdapter();
 						const info = adapter ? adapter.info : null;
 
-						window.__d33AdapterInfo = info ? {
+						window.__d3threeAdapterInfo = info ? {
 							vendor: info.vendor, architecture: info.architecture,
 							device: info.device, description: info.description
 						} : null;
 
 					} catch ( e ) {
 
-						window.__d33AdapterInfo = { error: String( e ) };
+						window.__d3threeAdapterInfo = { error: String( e ) };
 
 					}
 
@@ -343,14 +343,14 @@
 
 				await renderer.init();
 
-				console.log( 'd33 backend:', renderer.backend.constructor.name,
+				console.log( 'd3-three backend:', renderer.backend.constructor.name,
 					'R:', R, 'H:', H, 'maxLength:', maxLength( root ).toFixed( 5 ), 'leafPitch:', leafPitch.toFixed( 3 ),
 					'fontSize:', fontSize.toFixed( 3 ), 'px:', ( fontSize * pxPerUnit ).toFixed( 2 ),
 					'labels:', labels.count, 'flipped:', labels.flipped, 'x>=180:', leaves.filter( l => l.x >= 180 ).length,
 					'nodes:', root.descendants().length, 'links:', root.links().length, 'extensions:', leaves.length );
 
 				const controls = attachOrbit( camera, renderer.domElement, target );
-				window.d33dev = { camera, controls, labels };
+				window.d3threeDev = { camera, controls, labels };
 
 				register( {
 					renderer, scene, camera, marks, target,

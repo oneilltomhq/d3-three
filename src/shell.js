@@ -1,4 +1,4 @@
-// d33 — shell sector: the solid a sunburst cell becomes on a sphere.
+// d3-three — shell sector: the solid a sunburst cell becomes on a sphere.
 //
 // A cell of `d3.partition` is an annular sector (angle span x0..x1, radius
 // span y0..y1). Lifted onto a sphere it is a longitude span, a colatitude

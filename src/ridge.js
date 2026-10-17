@@ -1,4 +1,4 @@
-// d33 — ridge primitive: a d3 area curve as a standing slab
+// d3-three — ridge primitive: a d3 area curve as a standing slab
 // (layouts/ridgeline.md).
 //
 // A ridgeline plot draws, per series, `d3.area().curve(d3.curveBasis)` — a

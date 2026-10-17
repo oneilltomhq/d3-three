@@ -1,9 +1,9 @@
 # Parallel examples (from rung 4 on)
 
-After rung 3 the shared primitives (`src/d33.js`, `nodes.js`, `link.js`, `frame.js`,
+After rung 3 the shared primitives (`src/d3-three.js`, `nodes.js`, `link.js`, `frame.js`,
 `orbit.js`, `labels.js`, the harness, the server) are frozen for parallel workers.
 
-Each example runs in its own worktree: from `~/src/projects/d33/`,
+Each example runs in its own worktree: from `~/src/projects/d3-three/`,
 `git worktree add ex-<slug> -b ex-<slug> rung0`. Rules for a parallel worker:
 
 1. Add files only. New primitives go in new files under `src/`. Do not edit any

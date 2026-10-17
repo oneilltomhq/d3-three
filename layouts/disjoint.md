@@ -38,7 +38,7 @@ controls so it is deterministic and finished before the first frame:
 Proof that the layout itself is deterministic, not only the harness render:
 `node tools/stable.js d3_disjoint` loads the page in two separate Chromium
 processes with NO deterministic injection (real `Math.random`, real clocks,
-free-running RAF), reads `window.d33.report()` from each and compares every
+free-running RAF), reads `window.d3three.report()` from each and compares every
 position with `===`; it also compares against the harness's
 `marks/d3_disjoint.json`. All three agree: 611/611 marks, 0 differ, max |Δ| 0.
 

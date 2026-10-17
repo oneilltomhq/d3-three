@@ -71,7 +71,7 @@ ring the notebook has, at height `H`.
   2 px. The two-point geometry is local to the extension's midpoint and the
   Line2 is positioned there, so the mark's dumped position is that midpoint
   (on the rim, inside the node box — the depth gate counts every non-link
-  mark). `expected.extensions = 191`; the counts gate in `src/d33.js` learned
+  mark). `expected.extensions = 191`; the counts gate in `src/d3-three.js` learned
   this one kind.
 - labels: **leaves only (191), as the notebook** (the labels gate now takes a
   page-supplied `expected.labels`, so internal nodes are not labelled). Text
@@ -121,7 +121,7 @@ geometry hides nothing by construction. `e2e:twice` 0 px.
 ## Primitives for `src/`
 
 `src/step.js` (new, add-only): `cylinderPoint(θ, r, h)` and
-`stepCurve(θ0, r0, h0, θ1, r1, h1, arcStep)` → Vector3[]. `src/d33.js`: the
+`stepCurve(θ0, r0, h0, θ1, r1, h1, arcStep)` → Vector3[]. `src/d3-three.js`: the
 counts gate accepts mark kind `extension` against `expected.extensions`
 (defaults to 0), and the labels gate accepts a page-supplied `expected.labels`
 (defaults to the node count) — every other page is unchanged. `link.js`, `labels.js`,

@@ -1,4 +1,4 @@
-// d33 — OrbitControls for looking at an example by hand. Damping is off so the
+// d3-three — OrbitControls for looking at an example by hand. Damping is off so the
 // camera never moves on its own: under the e2e harness exactly one frame is
 // rendered and the camera must be bit-identical to the registered one.
 

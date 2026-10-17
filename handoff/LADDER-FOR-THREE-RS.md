@@ -1,12 +1,12 @@
-# d33 ladder, for the three-rs director
+# d3-three ladder, for the three-rs director
 
-What d33 leaves behind for each finished example (HANDOFF §D.19–20): the HTML
+What d3-three leaves behind for each finished example (HANDOFF §D.19–20): the HTML
 page, the harness screenshot, the marks JSON, and the layout note — plus the d3
 modules the layout needs and a summary of the 3D lift.
 
 ## Contract between the two projects
 
-**Screenshots are visual anchors, never pixel graders.** d33 renders WebGPU on
+**Screenshots are visual anchors, never pixel graders.** d3-three renders WebGPU on
 Dawn's SwiftShader (headless Chromium); three-rs renders wgpu on lavapipe. The
 rasterizers differ, so a pixel comparison between the two is meaningless.
 
@@ -15,7 +15,7 @@ its id, kind (`node` / `link` / `cell`), world position, and for links the ids o
 its two endpoints. A three-rs rung matches those numbers; it uses the screenshot
 only to check it is looking at the same thing.
 
-Ruling recorded by the d33 director after rung 0; see
+Ruling recorded by the d3-three director after rung 0; see
 `handoff/rung0/LOG.md` §1 for the measurements behind it.
 
 The gates every example passes are in `gates/d3_<slug>.json`: depth (smallest
@@ -189,7 +189,7 @@ label margin). Fixed; one frame.
 picking 20/20 from both cameras (sampledA 20, sampledB 20, 38 distinct marks) ·
 labels 252/252.
 
-**Picking on a closed surface (d33.js change on this rung):** leaf marks carry
+**Picking on a closed surface (d3-three.js change on this rung):** leaf marks carry
 `normal` (their unit vector). The gate samples, per camera, only marks whose
 normal is absent or faces that camera (`dot(normal, camera − mark) > 0`), so a
 leaf on the far side of the sphere is not raycast through the near side. Marks
@@ -245,7 +245,7 @@ positions from the marks JSON.
 **Determinism, proven twice.** `e2e:twice` is 0 px (both raw PNGs sha256
 `c0462175…4db2`). Separately, `node tools/stable.js d3_force` loads the page in two
 independent Chromium processes with NO harness injection (real `Math.random`, real
-clocks, free-running RAF), reads `window.d33.report()` from each and compares every
+clocks, free-running RAF), reads `window.d3three.report()` from each and compares every
 mark and label position with `===`, and compares against `marks/d3_force.json`:
 331/331 marks and 77/77 labels identical in all three, max |Δ| 0.
 
@@ -416,7 +416,7 @@ elevation, sees the whole disc (eligible 251 / 251). Fixed; one frame.
 251/251 · angle 0.448 / 0.551 · picking 20/20 from both cameras (251 / 251 eligible)
 · labels 93/93. `e2e:twice` 0 px.
 
-**Harness changes carried by this rung:** `src/d33.js` — the counts gate compares
+**Harness changes carried by this rung:** `src/d3-three.js` — the counts gate compares
 `cell` marks against `expected.cells` (default 0); angle and picking run on nodes
 and cells, picking reports `eligibleA/B`; the labels gate honours `expected.labels`;
 `register({ planar: true })` makes the depth gate pass with `note: 'planar by
@@ -478,7 +478,7 @@ eligible). Fixed; one frame.
 220/220 cells · angle 0.458 / 0.488 · picking 20/20 from both cameras · labels
 30/30 (page-supplied `expected.labels`) · twice 0 px.
 
-**d33.js changes on this rung:** the counts gate also compares `cell` marks to
+**d3-three.js changes on this rung:** the counts gate also compares `cell` marks to
 `expected.cells` (default 0); the angle and picking gates run on node + cell
 marks; the labels gate compares to `expected.labels` when the page supplies it,
 else to the node count; `register({ planar: true })` → `state.planar`, the depth
@@ -504,7 +504,7 @@ draws every label and clips it); the value line's `fill-opacity 0.7` and extra
 `0.3em` gap are not reproduced (one `Text`, one colour, one pitch).
 `tools/ref.js` needed two small additions to render this notebook (`REF_EXPRS`
 for the `viewof tile` input, a `DOM.uid` stub). The harness's `writeReport`
-picks fields, so `planar` is in `window.d33.report()` but in neither
+picks fields, so `planar` is in `window.d3three.report()` but in neither
 `marks/*.json` nor `gates/*.json` — only the depth gate's note shows it (a
 one-line harness change, not made here; the depth gate's `note` is enough for
 the grader).
@@ -554,7 +554,7 @@ the target's (radius, height); colour = the target's `setColor` colour, opaque,
 leaf's point straight up the rim to height `H`, black at opacity 0.25, 2 px —
 the notebook's `linkExtension`, which restores the clean ring; its dumped
 position is the extension's midpoint. `expected = { nodes: 381, links: 380,
-extensions: 191 }`; `src/d33.js`'s counts gate learned `extension` /
+extensions: 191 }`; `src/d3-three.js`'s counts gate learned `extension` /
 `expected.extensions` (defaults to 0, other pages unchanged).
 
 **Labels:** leaves only (191), as the notebook; same primitive and dependency as
@@ -573,7 +573,7 @@ unchanged: the leaves are passed as `{ data, x, children }` shims (empty
 Static mirror check from camera A flips 26 of 191; the labels seen from behind
 are the director's per-frame flip. Every label's anchor position, quaternion,
 anchor and string is in `marks/d3_tree-of-life.json` `labels[]`.
-`expected.labels = 191`; the labels gate in `src/d33.js` now takes a
+`expected.labels = 191`; the labels gate in `src/d3-three.js` now takes a
 page-supplied `expected.labels` (defaults to the node count).
 
 **Camera:** PerspectiveCamera fov 40, elevation 35°, azimuth 25°, fitted at 0.85
@@ -585,7 +585,7 @@ its 0.36-away neighbour from camera A; 20–28° is a clean 20/20 run.)
 0.2606 / 0.2522 · picking 20/20 from both cameras (sampledA 20, sampledB 20) ·
 labels 191/191. `e2e:twice` 0 px (both raw PNGs sha256 `b607532b…e99db`).
 
-**Shared-file changes on this branch:** `src/d33.js` counts gate, +3 lines and
+**Shared-file changes on this branch:** `src/d3-three.js` counts gate, +3 lines and
 two doc lines (mark kind `extension`, `expected.extensions`); labels gate, +2
 lines (`expected.labels`, defaulting to the node count). `tools/ref.js`
 gained three additive env knobs — `REF_VALUES` (JSON merged over the presets:
@@ -640,7 +640,7 @@ velocity decay 0.6; alpha decay `1 − 0.001^(1/300)`; 3D spiral init
 **Determinism, proven twice.** `e2e:twice` is 0 px (both raw PNGs sha256
 `eb550fa1…e53a`). Separately, `node tools/stable.js d3_force-tree` loads the page
 in two independent Chromium processes with NO harness injection (real
-`Math.random`, real clocks, free-running RAF), reads `window.d33.report()` from
+`Math.random`, real clocks, free-running RAF), reads `window.d3three.report()` from
 each and compares every mark and label position with `===`, and compares against
 `marks/d3_force-tree.json`: 503/503 marks and 32/32 labels identical in all
 three, max |Δ| 0.
@@ -1392,7 +1392,7 @@ leafOffset 0). `fontSize` = 7 px at target distance at 400×250 = 0.688 units
 (8 px made Chad and Sudan touch). `labels.update(camera)` per frame; 11 of 30
 are flipped for camera A (they face away from it).
 
-**Shared-file changes on this branch:** none in `src/d33.js`, `src/labels.js`
+**Shared-file changes on this branch:** none in `src/d3-three.js`, `src/labels.js`
 or `test/e2e/`. `tools/ref.js` (+61/−3, additive): imports the vendored
 topojson-client onto `window.topojson` (optional, try/catch) and adds it to the
 cell values; new `REF_IMPORTS` env (`{"Legend":"deps/color-legend"}`) loads a

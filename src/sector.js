@@ -1,4 +1,4 @@
-// d33 — annular-sector prism: d3.arc's sector outline extruded along +y.
+// d3-three — annular-sector prism: d3.arc's sector outline extruded along +y.
 //
 // The 2D shape is exactly what d3.arc draws for `{ innerRadius, outerRadius,
 // startAngle, endAngle, padAngle, padRadius }` (no corner radius): angle 0 is

@@ -43,7 +43,7 @@ the target's (radius, height); colour = the target's `setColor` colour, opaque,
 leaf's point straight up the rim to height `H`, black at opacity 0.25, 2 px —
 the notebook's `linkExtension`, which restores the clean ring; its dumped
 position is the extension's midpoint. `expected = { nodes: 381, links: 380,
-extensions: 191 }`; `src/d33.js`'s counts gate learned `extension` /
+extensions: 191 }`; `src/d3-three.js`'s counts gate learned `extension` /
 `expected.extensions` (defaults to 0, other pages unchanged).
 
 **Labels:** leaves only (191), as the notebook; same primitive and dependency as
@@ -62,7 +62,7 @@ unchanged: the leaves are passed as `{ data, x, children }` shims (empty
 Static mirror check from camera A flips 26 of 191; the labels seen from behind
 are the director's per-frame flip. Every label's anchor position, quaternion,
 anchor and string is in `marks/d3_tree-of-life.json` `labels[]`.
-`expected.labels = 191`; the labels gate in `src/d33.js` now takes a
+`expected.labels = 191`; the labels gate in `src/d3-three.js` now takes a
 page-supplied `expected.labels` (defaults to the node count).
 
 **Camera:** PerspectiveCamera fov 40, elevation 35°, azimuth 25°, fitted at 0.85
@@ -74,7 +74,7 @@ its 0.36-away neighbour from camera A; 20–28° is a clean 20/20 run.)
 0.2606 / 0.2522 · picking 20/20 from both cameras (sampledA 20, sampledB 20) ·
 labels 191/191. `e2e:twice` 0 px (both raw PNGs sha256 `b607532b…e99db`).
 
-**Shared-file changes on this branch:** `src/d33.js` counts gate, +3 lines and
+**Shared-file changes on this branch:** `src/d3-three.js` counts gate, +3 lines and
 two doc lines (mark kind `extension`, `expected.extensions`); labels gate, +2
 lines (`expected.labels`, defaulting to the node count). `tools/ref.js`
 gained three additive env knobs — `REF_VALUES` (JSON merged over the presets:

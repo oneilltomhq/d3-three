@@ -1,4 +1,4 @@
-// d33 — the tree-of-life notebook's `linkStep`, lifted onto a cylinder
+// d3-three — the tree-of-life notebook's `linkStep`, lifted onto a cylinder
 // (layouts/tree-of-life.md).
 //
 // In the notebook a link is "M start · A (arc at the start radius to the end

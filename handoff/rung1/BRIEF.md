@@ -1,6 +1,6 @@
 # Rung 1 brief: cluster dendrogram → cone tree (director: Fable; worker: Opus)
 
-Read HANDOFF.md, handoff/rung0/{BRIEF,LOG}.md (harness contract), src/d33.js, and
+Read HANDOFF.md, handoff/rung0/{BRIEF,LOG}.md (harness contract), src/d3-three.js, and
 layouts/cluster.md — the layout note is the design; implement it, do not redesign it.
 If a number in it (radii, dy, camera) has to move to pass a gate or to look right, move
 it and update the note so it stays true.
@@ -21,7 +21,7 @@ it and update the note so it stays true.
 6. `handoff/LADDER-FOR-THREE-RS.md` created with its first entry (§D.20): the four
    artefacts, d3 modules used, the 3D layout summary, and the rasterizer ruling from
    handoff/rung0/LOG.md.
-7. `src/d33.js`: add optional `pickables` to `register()` (see LOG ruling).
+7. `src/d3-three.js`: add optional `pickables` to `register()` (see LOG ruling).
 
 ## Primitives (§E.23): create in `src/`, keep them small and reusable
 - `src/link.js`: `linkCurve(a, b, axis, segments)` → points of a cubic bezier whose

@@ -9,7 +9,7 @@
 // `Math.random()` or the clock would still pass it. This tool loads the page
 // in two SEPARATE browser processes with NO injection — the page's own
 // Math.random, real performance.now, a free-running RAF — reads
-// `window.d33.report().marks` from each, and compares every mark's position
+// `window.d3three.report().marks` from each, and compares every mark's position
 // exactly (`===` on the doubles). It also compares the first run against the
 // harness's own `marks/<file>.json`, so all three sources must agree.
 //
@@ -56,7 +56,7 @@ const port = server.address().port;
 
 async function loadOnce( run ) {
 
-	const userDataDir = await fs.mkdtemp( path.join( os.tmpdir(), `d33-stable-${ run }-` ) );
+	const userDataDir = await fs.mkdtemp( path.join( os.tmpdir(), `d3-three-stable-${ run }-` ) );
 
 	const browser = await puppeteer.launch( {
 		headless: 'new',
@@ -73,13 +73,13 @@ async function loadOnce( run ) {
 		page.on( 'pageerror', e => console.error( `[run ${ run }]`, e.message ) );
 
 		await page.goto( `http://localhost:${ port }/examples/${ file }.html`, { waitUntil: 'networkidle0', timeout: 120000 } );
-		await page.waitForFunction( () => typeof window.d33 === 'object' && window.d33 !== null && window.d33.state.renderer !== null, { timeout: 60000 } );
+		await page.waitForFunction( () => typeof window.d3three === 'object' && window.d3three !== null && window.d3three.state.renderer !== null, { timeout: 60000 } );
 
 		return await page.evaluate( () => {
 
 			// the proof is about the page as it really runs: no injection here
 			const injected = typeof Math._random === 'function' || typeof performance._now === 'function';
-			const report = window.d33.report();
+			const report = window.d3three.report();
 
 			return {
 				injected,

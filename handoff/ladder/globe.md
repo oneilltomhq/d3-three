@@ -73,7 +73,7 @@ leafOffset 0). `fontSize` = 7 px at target distance at 400×250 = 0.688 units
 (8 px made Chad and Sudan touch). `labels.update(camera)` per frame; 11 of 30
 are flipped for camera A (they face away from it).
 
-**Shared-file changes on this branch:** none in `src/d33.js`, `src/labels.js`
+**Shared-file changes on this branch:** none in `src/d3-three.js`, `src/labels.js`
 or `test/e2e/`. `tools/ref.js` (+61/−3, additive): imports the vendored
 topojson-client onto `window.topojson` (optional, try/catch) and adds it to the
 cell values; new `REF_IMPORTS` env (`{"Legend":"deps/color-legend"}`) loads a

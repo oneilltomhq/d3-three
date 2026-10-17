@@ -1,4 +1,4 @@
-// d33 — hierarchical edge bundling in 3D (layouts/bundling.md).
+// d3-three — hierarchical edge bundling in 3D (layouts/bundling.md).
 //
 // `bundleCurve` is d3's `curveBundle(beta)` + `curveBasis` lifted from the plane
 // to space, piece for piece: the control points are first straightened toward

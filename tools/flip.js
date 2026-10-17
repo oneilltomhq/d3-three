@@ -6,7 +6,7 @@
 // The e2e harness renders one frame from camera A, where the layout-time
 // mirror check already made every label read left-to-right, so it can never
 // show a flip. This tool loads the page WITHOUT the deterministic injection
-// (free-running RAF, real clocks), reads `window.d33dev = { camera, controls,
+// (free-running RAF, real clocks), reads `window.d3threeDev = { camera, controls,
 // labels }`, checks that no label is turned at camera A, orbits the camera by
 // `--azimuth` degrees about the target's vertical axis, calls
 // `labels.update( camera )` and counts the labels whose pose changed (none /
@@ -83,7 +83,7 @@ const server = createServer();
 await new Promise( resolve => server.listen( 0, resolve ) );
 const port = server.address().port;
 
-const userDataDir = await fs.mkdtemp( path.join( os.tmpdir(), 'd33-flip-' ) );
+const userDataDir = await fs.mkdtemp( path.join( os.tmpdir(), 'd3-three-flip-' ) );
 
 const browser = await puppeteer.launch( {
 	headless: 'new',
@@ -103,8 +103,8 @@ try {
 	page.on( 'pageerror', e => console.error( '[page]', e.message ) );
 
 	await page.goto( `http://localhost:${ port }/examples/${ file }.html`, { waitUntil: 'networkidle0', timeout: 120000 } );
-	await page.waitForFunction( () => typeof window.d33dev === 'object' && window.d33dev !== null
-		&& window.d33 && window.d33.state.renderer !== null, { timeout: 60000 } );
+	await page.waitForFunction( () => typeof window.d3threeDev === 'object' && window.d3threeDev !== null
+		&& window.d3three && window.d3three.state.renderer !== null, { timeout: 60000 } );
 
 	// hide the info bar like the harness's clean-page.js
 	await page.evaluate( () => { const info = document.getElementById( 'info' ); if ( info ) info.style.display = 'none'; } );
@@ -113,7 +113,7 @@ try {
 	// once from the page's own animate), then stop it: from here on the only
 	// frames drawn are the ones this script asks for.
 	await page.evaluate( () => new Promise( r => requestAnimationFrame( () => requestAnimationFrame( r ) ) ) );
-	await page.evaluate( () => window.d33.state.renderer.setAnimationLoop( null ) );
+	await page.evaluate( () => window.d3three.state.renderer.setAnimationLoop( null ) );
 	console.log( `[${ file }] loaded; animation loop stopped` );
 
 	// One render per step, each read back through the canvas like the
@@ -126,8 +126,8 @@ try {
 	// render is always the second one after the injected RAF frame.
 	const step = ( src, ...params ) => page.evaluate( async ( src, ...params ) => {
 
-		const { renderer, scene, camera } = window.d33.state;
-		const { controls, labels } = window.d33dev;
+		const { renderer, scene, camera } = window.d3three.state;
+		const { controls, labels } = window.d3threeDev;
 
 		const info = ( new Function( 'camera', 'controls', 'labels', 'THREE', `return (${ src })(camera, controls, labels)` ) )( camera, controls, labels );
 

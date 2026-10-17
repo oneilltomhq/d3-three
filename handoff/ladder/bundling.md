@@ -49,7 +49,7 @@ label margin). Fixed; one frame.
 picking 20/20 from both cameras (sampledA 20, sampledB 20, 38 distinct marks) ·
 labels 252/252.
 
-**Picking on a closed surface (d33.js change on this rung):** leaf marks carry
+**Picking on a closed surface (d3-three.js change on this rung):** leaf marks carry
 `normal` (their unit vector). The gate samples, per camera, only marks whose
 normal is absent or faces that camera (`dot(normal, camera − mark) > 0`), so a
 leaf on the far side of the sphere is not raycast through the near side. Marks

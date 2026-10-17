@@ -34,7 +34,7 @@ positions from the marks JSON.
 **Determinism, proven twice.** `e2e:twice` is 0 px (both raw PNGs sha256
 `c0462175…4db2`). Separately, `node tools/stable.js d3_force` loads the page in two
 independent Chromium processes with NO harness injection (real `Math.random`, real
-clocks, free-running RAF), reads `window.d33.report()` from each and compares every
+clocks, free-running RAF), reads `window.d3three.report()` from each and compares every
 mark and label position with `===`, and compares against `marks/d3_force.json`:
 331/331 marks and 77/77 labels identical in all three, max |Δ| 0.
 

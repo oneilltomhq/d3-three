@@ -12,13 +12,13 @@ made so example 1 (cluster dendrogram) drops in without touching the harness.
                             reuses ~/.cache/puppeteer), pngjs ^7, jpeg-js ^0.4.4, d3 ^7,
                             d3-force-3d ^3, esbuild (dev)
     examples/d3_<slug>.html one page per example, same shape as three's webgpu_*.html
-    examples/d3_blank.html  rung 0 page: WebGPURenderer, empty scene, d33 API with zero marks
+    examples/d3_blank.html  rung 0 page: WebGPURenderer, empty scene, d3-three API with zero marks
     examples/jsm/vendor/d3.js  single ESM bundle built once by `npm run build:d3` from
                             `src/vendor/d3-entry.js` (`export * from 'd3'; export * as force3d
                             from 'd3-force-3d'`). Committed. No CDN, no runtime network.
     examples/screenshots/   reference jpgs produced by `--make` (harness writes here)
     src/                    shared primitives grow here later (camera, line, text, tween, orbit).
-                            Rung 0 creates only `src/d33.js`: the page-side API (below).
+                            Rung 0 creates only `src/d3-three.js`: the page-side API (below).
     marks/                  `d3_<slug>.json` dumps written by the harness
     gates/                  `d3_<slug>.json` gate results written by the harness
     test/e2e/               image.js, deterministic-injection.js, clean-page.js copied BYTE FOR
@@ -36,7 +36,7 @@ made so example 1 (cluster dendrogram) drops in without touching the harness.
 - Vendor paths are read from env `THREE_DIR` / `GALLERY_DIR` with those defaults.
 - Example importmap: `"three": "/build/three.webgpu.js"`, `"three/webgpu"` same,
   `"three/tsl": "/build/three.tsl.js"`, `"three/addons/": "/jsm/"`, `"d3": "/examples/jsm/vendor/d3.js"`,
-  `"d33": "/src/d33.js"`.
+  `"d3-three": "/src/d3-three.js"`.
 
 ### Harness (test/e2e/puppeteer.js)
 - Start from three's file. Keep: flags (the real ones in the file, incl. `--use-angle=vulkan`),
@@ -49,12 +49,12 @@ made so example 1 (cluster dendrogram) drops in without touching the harness.
   `e2e` (compare), `e2e:make` (write references), `e2e:twice` (runs the screenshot step twice
   into two temp files and asserts `compare()` returns 0 differing pixels), `build:d3`.
 - After the screenshot and before the diff, the harness calls
-  `page.evaluate(() => window.d33.report())` and writes `marks/<file>.json` and
+  `page.evaluate(() => window.d3three.report())` and writes `marks/<file>.json` and
   `gates/<file>.json`. Gate failure is a test failure, printed red, same as a diff failure.
-  A page with no `window.d33` is a failure ("no d33 API").
+  A page with no `window.d3three` is a failure ("no d3-three API").
 
-### Page-side API (src/d33.js) — every example registers with it
-    import { register } from 'd33';
+### Page-side API (src/d3-three.js) — every example registers with it
+    import { register } from 'd3-three';
     register({ renderer, scene, camera, marks, expected })
 - `marks`: array of `{ id, kind: 'node' | 'link' | 'cell', object }`, one entry per datum,
   one Object3D per entry (§C.11). Position for gates = `object.getWorldPosition()` for nodes/
@@ -94,7 +94,7 @@ made so example 1 (cluster dendrogram) drops in without touching the harness.
    up, that is the first thing to report; do not silently accept the fallback.
 
 ### Out of scope for rung 0
-No dendrogram, no primitives beyond `src/d33.js`, no OrbitControls wiring, no labels.
+No dendrogram, no primitives beyond `src/d3-three.js`, no OrbitControls wiring, no labels.
 
 ## Worker report format
 Gates status for the blank page, determinism items 1–7 with evidence, files created,

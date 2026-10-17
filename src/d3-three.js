@@ -1,4 +1,4 @@
-// d33 — page-side API shared by every d3_*.html example.
+// d3-three — page-side API shared by every d3_*.html example.
 //
 // An example builds its scene, then calls:
 //
@@ -33,7 +33,7 @@
 //             `{ id, text, x, y, z, q: [x,y,z,w], anchorX }` — is written to
 //             the marks JSON as a separate `labels` array (rung 3).
 //
-// The e2e harness then calls `window.d33.report()` after the screenshot and
+// The e2e harness then calls `window.d3three.report()` after the screenshot and
 // writes `marks/<file>.json` and `gates/<file>.json`. Everything here runs on
 // the CPU and is deterministic: no renderer reads, no GPU readback.
 
@@ -69,7 +69,7 @@ export function register( options ) {
 	state.labels = options.labels || null;
 	state.planar = options.planar === true;
 
-	window.d33 = api;
+	window.d3three = api;
 
 	return api;
 
@@ -439,7 +439,7 @@ function environment() {
 		backend,
 		isWebGPUBackend: backend === 'WebGPUBackend',
 		hasNavigatorGPU: typeof navigator !== 'undefined' && 'gpu' in navigator,
-		adapterInfo: window.__d33AdapterInfo || null
+		adapterInfo: window.__d3threeAdapterInfo || null
 	};
 
 }

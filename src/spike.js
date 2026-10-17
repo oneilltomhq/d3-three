@@ -1,4 +1,4 @@
-// d33 — spike map primitives: a unit spike (narrow square pyramid) and a
+// d3-three — spike map primitives: a unit spike (narrow square pyramid) and a
 // thin ground slab from a pre-projected GeoJSON (Multi)Polygon.
 //
 // Both are plain BufferGeometries in the world frame (y up): the map lies in

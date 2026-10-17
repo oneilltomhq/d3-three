@@ -1,6 +1,6 @@
 # rung 3 log — labels
 
-Branch `rung0`, worktree `d33/rung0/`. lib3 read from `~/src/projects/lib3`
+Branch `rung0`, worktree `d3-three/rung0/`. lib3 read from `~/src/projects/lib3`
 (commit `b20b053ff649054259be85633338e27046e5d564`, `dist/` prebuilt, not
 touched). Vendored three at `3d010ef` (package.json `0.185.0`, `REVISION
 '186dev'`).

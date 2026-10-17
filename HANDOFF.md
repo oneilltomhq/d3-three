@@ -1,11 +1,11 @@
-# d33 — handoff
+# d3-three — handoff
 
 Written 2026-09-12 from the d3-gallery session. Lift a ladder of D3
 gallery examples into real 3D in Three.js (WebGPURenderer), so that the
 data structures themselves become three-dimensional, and leave behind
 for each one exactly what the three-rs ladder (`~/src/projects/three-rs`)
 needs to adopt it as a later rung. Sibling of three-rs; opposite grader:
-three-rs matches references that already exist, d33 creates them.
+three-rs matches references that already exist, d3-three creates them.
 
 ## A. What done means
 
@@ -15,7 +15,7 @@ three-rs matches references that already exist, d33 creates them.
    phylogenetic tree; then force-directed graph, zoomable sunburst,
    circle packing, treemap.
 3. Eight passing examples is done; the four dendrograms are the minimum.
-4. Each page becomes a three-rs rung later, so d33 creates the references
+4. Each page becomes a three-rs rung later, so d3-three creates the references
    three-rs will match.
 5. The user eyeballs every finished example and says it earns its place;
    no number replaces this. Director stops after each example and asks.
@@ -109,6 +109,6 @@ three-rs matches references that already exist, d33 creates them.
 
 ## State
 
-`~/src/projects/d33` bare-worktree layout (see CLAUDE.md). `main` has
+`~/src/projects/d3-three` bare-worktree layout (see CLAUDE.md). `main` has
 the bootstrap commit only. Worktree `rung0/` on branch `rung0`. Nothing
 else written: no package.json, no harness copy, no `src/`.

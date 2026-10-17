@@ -38,7 +38,7 @@ velocity decay 0.6; alpha decay `1 − 0.001^(1/300)`; 3D spiral init
 **Determinism, proven twice.** `e2e:twice` is 0 px (both raw PNGs sha256
 `eb550fa1…e53a`). Separately, `node tools/stable.js d3_force-tree` loads the page
 in two independent Chromium processes with NO harness injection (real
-`Math.random`, real clocks, free-running RAF), reads `window.d33.report()` from
+`Math.random`, real clocks, free-running RAF), reads `window.d3three.report()` from
 each and compares every mark and label position with `===`, and compares against
 `marks/d3_force-tree.json`: 503/503 marks and 32/32 labels identical in all
 three, max |Δ| 0.

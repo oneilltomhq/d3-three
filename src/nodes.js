@@ -1,4 +1,4 @@
-// d33 — node marks for a d3 hierarchy: one Mesh(SphereGeometry) per
+// d3-three — node marks for a d3 hierarchy: one Mesh(SphereGeometry) per
 // `root.descendants()` (HANDOFF §C.11), coloured the way the dendrogram
 // notebooks colour them — internal nodes grey, leaves by their top-level
 // ancestor from `d3.schemeTableau10`, so the branches read apart in 3D.
@@ -17,7 +17,7 @@ import * as d3 from 'd3';
  *           palette?: readonly string[], name?: string }} options
  * @returns {{ group: THREE.Group, marks: object[], ids: Map<object, string>,
  *             colour: Function }}
- *          `marks` are d33 mark entries ready to be concatenated with the
+ *          `marks` are d3-three mark entries ready to be concatenated with the
  *          link marks; `ids` maps each hierarchy node to its mark id, which
  *          the links need for their `a`/`b` endpoints.
  */

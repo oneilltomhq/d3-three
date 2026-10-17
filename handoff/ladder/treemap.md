@@ -46,7 +46,7 @@ eligible). Fixed; one frame.
 220/220 cells · angle 0.458 / 0.488 · picking 20/20 from both cameras · labels
 30/30 (page-supplied `expected.labels`) · twice 0 px.
 
-**d33.js changes on this rung:** the counts gate also compares `cell` marks to
+**d3-three.js changes on this rung:** the counts gate also compares `cell` marks to
 `expected.cells` (default 0); the angle and picking gates run on node + cell
 marks; the labels gate compares to `expected.labels` when the page supplies it,
 else to the node count; `register({ planar: true })` → `state.planar`, the depth
@@ -72,7 +72,7 @@ draws every label and clips it); the value line's `fill-opacity 0.7` and extra
 `0.3em` gap are not reproduced (one `Text`, one colour, one pitch).
 `tools/ref.js` needed two small additions to render this notebook (`REF_EXPRS`
 for the `viewof tile` input, a `DOM.uid` stub). The harness's `writeReport`
-picks fields, so `planar` is in `window.d33.report()` but in neither
+picks fields, so `planar` is in `window.d3three.report()` but in neither
 `marks/*.json` nor `gates/*.json` — only the depth gate's note shows it (a
 one-line harness change, not made here; the depth gate's `note` is enough for
 the grader).
