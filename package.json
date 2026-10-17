@@ -1,9 +1,13 @@
 {
 	"name": "d3-three",
-	"version": "0.0.0",
-	"private": true,
+	"version": "0.1.0",
 	"type": "module",
-	"description": "D3 gallery examples lifted into real 3D with Three.js WebGPURenderer",
+	"description": "Eighteen D3 gallery charts ported to three.js WebGPURenderer, graded pixel for pixel by an end-to-end harness",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/oneilltomhq/d3-three.git"
+	},
 	"scripts": {
 		"build:d3": "esbuild src/vendor/d3-entry.js --bundle --format=esm --outfile=examples/jsm/vendor/d3.js",
 		"test": "node --test test/pack3.test.mjs",
