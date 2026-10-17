@@ -8,7 +8,7 @@
 //   /build/*                                 -> $THREE_DIR/build/*
 //   /jsm/*                                   -> $THREE_DIR/examples/jsm/*
 //   /gallery/*                               -> $GALLERY_DIR/*
-//   /lib3/*                                  -> $LIB3_DIR/dist/* (lib3 sdf-text, rung 3)
+//   /lib3/*                                  -> @oneilltom/lib3 dist/* (sdf-text, rung 3)
 //
 // The `/build/three.webgpu.js` path is kept verbatim so the harness's request
 // interception (copied from three) still matches.
@@ -24,13 +24,13 @@ const repoRoot = path.resolve( __dirname, '../..' );
 
 const THREE_DIR = path.resolve( process.env.THREE_DIR || path.join( os.homedir(), 'src/vendor/three.js' ) );
 const GALLERY_DIR = path.resolve( process.env.GALLERY_DIR || path.join( os.homedir(), 'src/vendor/d3-gallery/notebooks' ) );
-const LIB3_DIR = path.resolve( process.env.LIB3_DIR || path.join( os.homedir(), 'src/projects/lib3' ) );
+const LIB3_DIST = path.join( repoRoot, 'node_modules/@oneilltom/lib3/dist' );
 
 const mounts = [
 	{ prefix: '/build/', root: path.join( THREE_DIR, 'build' ) },
 	{ prefix: '/jsm/', root: path.join( THREE_DIR, 'examples/jsm' ) },
 	{ prefix: '/gallery/', root: GALLERY_DIR },
-	{ prefix: '/lib3/', root: path.join( LIB3_DIR, 'dist' ) }
+	{ prefix: '/lib3/', root: LIB3_DIST }
 ];
 
 function escapeHtml( str ) {
@@ -247,7 +247,7 @@ if ( isMain ) {
 		console.log( `  repo:    ${repoRoot}` );
 		console.log( `  three:   ${THREE_DIR}` );
 		console.log( `  gallery: ${GALLERY_DIR}` );
-		console.log( `  lib3:    ${LIB3_DIR}/dist` );
+		console.log( `  lib3:    ${LIB3_DIST}` );
 
 	} );
 

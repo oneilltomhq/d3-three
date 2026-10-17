@@ -67,7 +67,7 @@ picking 20/20 from both cameras · labels 252/252.
 
 **Labels (rung 3):** one SDF-text label per node (252) via lib3's `sdf-text`
 (`BatchedText` + `Text`, vector font path, served at `/lib3/` from
-`~/src/projects/lib3/dist`, lib3 commit `b20b053f`), `src/labels.js`
+the npm package `@oneilltom/lib3` 0.5.0), `src/labels.js`
 `hierarchyLabels`. Roboto Regular (`examples/fonts/Roboto-Regular.ttf`), fill
 `#333`, white halo `outlineWidth 0.25`, `fontSize = min(8 px at target
 distance, 0.6 · leaf pitch) = 1.344` world units. Not billboarded: each label
