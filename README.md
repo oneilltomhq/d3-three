@@ -158,4 +158,10 @@ licences:
   copied from three.js (MIT), and `puppeteer.js` and `server.js` were adapted
   from it.
 - The pages port code from the D3 gallery notebooks (ISC, Copyright
-  Observable, Inc.).
+  Observable, Inc.; @d3/tree-of-life is Copyright Mike Bostock), and
+  `parseNewick` in `examples/d3_tree-of-life.html` is Jason Davies's
+  newick.js (MIT).
+
+The full licence texts and notices are in
+`examples/jsm/vendor/THIRD-PARTY-NOTICES.md`, `LICENSE-Roboto` and
+`LICENSE-three.js`.

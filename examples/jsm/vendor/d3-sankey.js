@@ -1,4 +1,4 @@
-// d3-sankey 0.12.3 — https://github.com/d3/d3-sankey — ISC License, Copyright 2015-2019 Mike Bostock. Built from src/vendor/d3-sankey-entry.js (see there).
+// d3-sankey 0.12.3 — https://github.com/d3/d3-sankey — BSD-3-Clause, Copyright 2015 Mike Bostock (see examples/jsm/vendor/THIRD-PARTY-NOTICES.md). Built from src/vendor/d3-sankey-entry.js (see there).
 
 // ../rung0/node_modules/d3-array/src/max.js
 function max(values, valueof) {
