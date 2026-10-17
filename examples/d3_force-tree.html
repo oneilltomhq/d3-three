@@ -67,7 +67,7 @@
 
 				/* ---------------- data + d3 layout (as the notebook's chart cell, in 3D) ---------------- */
 
-				const data = await fetch( '/gallery/hierarchies/force-directed-tree/files/flare-2.json' ).then( r => r.json() );
+				const data = await fetch( './data/flare-2.json' ).then( r => r.json() );
 
 				// Compute the graph and start the force simulation.
 				const root = d3.hierarchy( data );

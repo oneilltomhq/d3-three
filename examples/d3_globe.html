@@ -119,10 +119,11 @@
 
 				/* ---------------- data (the notebook's hale, world, countries, countrymesh cells) ---------------- */
 
-				const files = '/gallery/maps/world-choropleth.v2/files/';
+				// hale.csv is not committed (its licence is unchecked): it comes from
+				// the d3-gallery mirror the server mounts at /gallery/ ($GALLERY_DIR).
 				const [ haleText, world ] = await Promise.all( [
-					fetch( files + 'hale.csv' ).then( r => r.text() ),
-					fetch( files + 'countries-50m.json' ).then( r => r.json() )
+					fetch( '/gallery/maps/world-choropleth.v2/files/hale.csv' ).then( r => r.text() ),
+					fetch( './data/countries-50m.json' ).then( r => r.json() )
 				] );
 
 				const hale = d3.csvParse( haleText ).map( d => ( { name: rename.get( d.country ) || d.country, hale: + d.hale } ) );

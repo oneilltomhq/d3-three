@@ -8,15 +8,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import { hierarchy } from 'd3-hierarchy';
 import { pack3, paddedPack3, density } from '../src/pack3.js';
 
 const TOL = 1e-9;
 
-const GALLERY_DIR = path.resolve( process.env.GALLERY_DIR || path.join( os.homedir(), 'src/vendor/d3-gallery/notebooks' ) );
-const flare = JSON.parse( readFileSync( path.join( GALLERY_DIR, 'hierarchies/pack.v2/files/flare-2.json' ), 'utf8' ) );
+const flare = JSON.parse( readFileSync( new URL( '../examples/data/flare-2.json', import.meta.url ), 'utf8' ) );
 
 function flareRoot() {
 

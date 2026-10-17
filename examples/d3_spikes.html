@@ -88,7 +88,7 @@
 
 				/* ---------------- data + d3 layout (the notebook's cells, verbatim) ---------------- */
 
-				const base = '/gallery/dots/spike-map.v2/files/';
+				const base = './data/';
 				const [ us, populationRaw ] = await Promise.all( [
 					fetch( base + 'counties-albers-10m.json' ).then( r => r.json() ),
 					fetch( base + 'population.json' ).then( r => r.json() )

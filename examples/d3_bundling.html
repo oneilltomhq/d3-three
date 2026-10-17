@@ -99,7 +99,7 @@
 
 				/* ---------------- data + d3 layout (as the notebook's chart cell) ---------------- */
 
-				const data = hierarchy( await fetch( '/gallery/networks/hierarchical-edge-bundling.v2/files/flare.json' ).then( r => r.json() ) );
+				const data = hierarchy( await fetch( './data/flare-imports.json' ).then( r => r.json() ) );
 
 				const width = 954;
 				const radius = width / 2;

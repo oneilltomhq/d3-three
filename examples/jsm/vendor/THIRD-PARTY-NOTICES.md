@@ -9,7 +9,8 @@ three.js harness files have their own files at the root: `/LICENSE-Roboto` and
 - [d3.js](#d3js): d3 7 and d3-force-3d, bundled by `npm run build:d3`
 - [d3-sankey.js](#d3-sankeyjs): d3-sankey 0.12.3 (BSD-3-Clause)
 - [topojson-client.js](#topojson-clientjs): topojson-client 3.1.0 (ISC)
-- [D3 gallery notebooks](#d3-gallery-notebooks): code ported into `examples/d3_*.html`, `ref/*.png`, `examples/data/life.txt` (ISC)
+- [D3 gallery notebooks](#d3-gallery-notebooks): code ported into `examples/d3_*.html` and `ref/*.png` (ISC)
+- [Data in examples/data](#data-in-examplesdata): the notebooks' file attachments and where their data comes from
 - [newick.js](#newickjs): `parseNewick` in `examples/d3_tree-of-life.html` (MIT)
 
 ## d3.js
@@ -366,8 +367,8 @@ THIS SOFTWARE.
 The example pages port chart code from these D3 gallery notebooks on Observable.
 Some cells are copied verbatim, for example `parseNewick`, `maxLength` and the
 data loading. `tools/ref.js` renders the same notebooks to `ref/*.png`.
-`examples/data/life.txt` is the tree-of-life notebook's file attachment,
-unchanged. Each notebook is published under the ISC licence:
+The data files in `examples/data/` are their file attachments, listed in the
+next section. Each notebook is published under the ISC licence:
 
 | notebook | page | copyright |
 | --- | --- | --- |
@@ -407,9 +408,56 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-The notebooks' data comes from the sources each notebook credits. The pages
-fetch it from `$GALLERY_DIR` at run time, and only `life.txt` is committed
-here.
+## Data in examples/data
+
+`examples/data/` holds the notebooks' file attachments, byte for byte, so that
+sixteen of the pages run from this repository alone. Each file keeps its
+attachment name, except that the edge-bundling notebook's `flare.json` is
+committed as `flare-imports.json`, and the treemap notebook's `flare.json`,
+which is byte-identical to `flare-2.json`, is not committed twice. The source
+column gives the credit each notebook gives for its data, or the source the
+file itself shows.
+
+| file | bytes | notebook attachment | source |
+| --- | --- | --- | --- |
+| `flare.json` | 11414 | @d3/cluster/2, @d3/tree/2 | the class hierarchy of the Flare visualization toolkit (Jeffrey Heer, UC Berkeley); no credit in the notebooks |
+| `flare-2.json` | 11634 | @d3/pack/2, @d3/sunburst/2, @d3/force-directed-tree; @d3/treemap/2 as `flare.json` | Flare's class hierarchy with file sizes, as above |
+| `flare-imports.json` | 34321 | @d3/hierarchical-edge-bundling/2, `flare.json` | Flare's classes and their imports, as above |
+| `miserables.json` | 18844 | @d3/force-directed-graph/2 | character co-occurrence in Victor Hugo's *Les Misérables*, from Donald Knuth's *The Stanford GraphBase* |
+| `graph.json` | 73595 | @d3/disjoint-force-directed-graph/2 | a citation graph of research papers and the patents that cite them; the notebook credits no source |
+| `energy.csv` | 2267 | @d3/sankey/2 | UK energy flows, from the Department of Energy & Climate Change's 2050 Calculator, via Tom Counsell (https://tamc.github.io/Sankey/) |
+| `penguins.csv` | 13506 | @d3/splom/2 | Kristen Gorman's measurements of penguins near Palmer Station, Antarctica (Palmer Station LTER) |
+| `population.json` | 64302 | @d3/spike-map/2 | estimated population by county, 2016: U.S. Census Bureau, American Community Survey 5-year estimates, via the Census API |
+| `counties-albers-10m.json` | 795407 | @d3/spike-map/2 | us-atlas 3.0.0 (ISC, below), derived from the U.S. Census Bureau's cartographic county boundaries, 2017 edition |
+| `us-population-state-age.csv` | 3516 | @d3/grouped-bar-chart/2 | U.S. Census Bureau, American Community Survey |
+| `data-2.csv` | 2806 | @d3/radial-stacked-bar-chart/3 | U.S. population by state and age group; the notebook credits no source |
+| `countries-50m.json` | 756420 | @d3/world-choropleth/2 | world-atlas 2.0.2 (ISC, below), derived from Natural Earth's 1:50m Admin 0 country boundaries, version 4.1.0 (public domain) |
+| `life.txt` | 11978 | @d3/tree-of-life | the tree of life in Newick format; the notebook credits a figure from *Nature* (https://www.nature.com/articles/nature08656/figures/1) and Jason Davies (https://www.jasondavies.com/tree-of-life/) |
+
+Two attachments are not committed until their licences are checked:
+`hale.csv` (@d3/world-choropleth/2, health-adjusted life expectancy from the
+WHO) and `traffic.csv` (@d3/ridgeline-plot, credited to Christopher Möller).
+The globe and ridgeline pages fetch them from the d3-gallery mirror at
+`$GALLERY_DIR`.
+
+`counties-albers-10m.json` is from us-atlas and `countries-50m.json` from
+world-atlas, both by Mike Bostock under the ISC licence:
+
+```
+Copyright 2013-2019 Michael Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+```
 
 ## newick.js
 

@@ -85,7 +85,7 @@
 
 				/* ---------------- data + d3 layout (the notebook's data and chart cells) ---------------- */
 
-				const csv = await fetch( '/gallery/networks/sankey.v2/files/energy.csv' ).then( r => r.text() );
+				const csv = await fetch( './data/energy.csv' ).then( r => r.text() );
 				const rawLinks = d3.csvParse( csv, d3.autoType );
 				const rawNodes = Array.from( new Set( rawLinks.flatMap( l => [ l.source, l.target ] ) ), name => ( { name, category: name.replace( / .*/, '' ) } ) );
 

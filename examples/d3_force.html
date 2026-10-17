@@ -65,7 +65,7 @@
 
 				/* ---------------- data + d3 layout (as the notebook's chart cell, in 3D) ---------------- */
 
-				const data = await fetch( '/gallery/networks/force-directed-graph.v2/files/miserables.json' ).then( r => r.json() );
+				const data = await fetch( './data/miserables.json' ).then( r => r.json() );
 
 				// Specify the color scale.
 				const color = d3.scaleOrdinal( d3.schemeCategory10 );

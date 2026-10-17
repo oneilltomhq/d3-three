@@ -75,7 +75,7 @@
 
 				/* ---------------- data + d3 layout (verbatim from the notebook) ---------------- */
 
-				const data = await fetch( '/gallery/hierarchies/sunburst.v2/files/flare-2.json' ).then( r => r.json() );
+				const data = await fetch( './data/flare-2.json' ).then( r => r.json() );
 
 				const color = d3.scaleOrdinal( d3.quantize( d3.interpolateRainbow, data.children.length + 1 ) );
 

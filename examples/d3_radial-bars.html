@@ -87,7 +87,7 @@
 
 				/* ---------------- data + d3 layout (verbatim from the notebook) ---------------- */
 
-				const csv = d3.csvParse( await fetch( '/gallery/radial/radial-stacked-bar-chart.v3/files/data-2.csv' ).then( r => r.text() ), d3.autoType );
+				const csv = d3.csvParse( await fetch( './data/data-2.csv' ).then( r => r.text() ), d3.autoType );
 				const data = csv.columns.slice( 1 ).flatMap( age => csv.map( d => ( { state: d.State, age, population: d[ age ] } ) ) );
 
 				// Stack the data into series by age

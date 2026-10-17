@@ -101,7 +101,7 @@
 
 				/* ---------------- data + d3 layout (as the notebook's chart cell) ---------------- */
 
-				const data = parseNewick( await fetch( '/examples/data/life.txt' ).then( r => r.text() ) );
+				const data = parseNewick( await fetch( './data/life.txt' ).then( r => r.text() ) );
 
 				const root = d3.hierarchy( data, d => d.branchset )
 					.sum( d => d.branchset ? 0 : 1 )

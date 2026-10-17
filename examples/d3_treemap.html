@@ -80,7 +80,7 @@
 
 				/* ---------------- data + d3 layout (the notebook's chart cell) ---------------- */
 
-				const data = await fetch( '/gallery/hierarchies/treemap.v2/files/flare.json' ).then( r => r.json() );
+				const data = await fetch( './data/flare-2.json' ).then( r => r.json() );
 
 				const color = d3.scaleOrdinal( data.children.map( d => d.name ), d3.schemeTableau10 );
 				const format = d3.format( ',d' );

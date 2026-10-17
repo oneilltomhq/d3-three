@@ -81,7 +81,7 @@
 				/* ---------------- data + scales (as the notebook's chart cell) ---------------- */
 
 				const data = d3.csvParse(
-					await fetch( '/gallery/dots/splom.v2/files/penguins.csv' ).then( r => r.text() ),
+					await fetch( './data/penguins.csv' ).then( r => r.text() ),
 					d3.autoType
 				);
 

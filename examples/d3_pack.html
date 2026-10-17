@@ -65,7 +65,7 @@
 
 				/* ---------------- data + d3 layout ---------------- */
 
-				const data = await fetch( '/gallery/hierarchies/pack.v2/files/flare-2.json' ).then( r => r.json() );
+				const data = await fetch( './data/flare-2.json' ).then( r => r.json() );
 
 				// d3 decides the hierarchy, the value sums and the packing order
 				// (descending value), exactly as the notebook's pack() call.

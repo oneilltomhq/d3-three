@@ -83,7 +83,7 @@
 
 				/* ---------------- data (the notebook's data cell) ---------------- */
 
-				const csv = await fetch( '/gallery/bars/grouped-bar-chart.v2/files/us-population-state-age.csv' ).then( r => r.text() );
+				const csv = await fetch( './data/us-population-state-age.csv' ).then( r => r.text() );
 				let table = d3.csvParse( csv, d3.autoType );
 				const ages = table.columns.slice( 1 );
 				table = d3.sort( table, d => - d3.sum( ages, age => d[ age ] ) ).slice( 0, 6 );

@@ -68,7 +68,7 @@
 
 				/* ---------------- data + d3 layout ---------------- */
 
-				const data = await fetch( '/gallery/hierarchies/cluster.v2/files/flare.json' ).then( r => r.json() );
+				const data = await fetch( './data/flare.json' ).then( r => r.json() );
 
 				const root = d3.hierarchy( data );
 				root.sort( ( a, b ) => d3.ascending( a.data.name, b.data.name ) );

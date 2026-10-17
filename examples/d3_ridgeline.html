@@ -93,7 +93,9 @@
 
 				/* ---------------- data + d3 scales (the notebook's chart cell) ---------------- */
 
-				// FileAttachment("traffic.csv").csv({typed: true})
+				// FileAttachment("traffic.csv").csv({typed: true}). traffic.csv is not
+				// committed (its licence is unchecked): it comes from the d3-gallery
+				// mirror the server mounts at /gallery/ ($GALLERY_DIR).
 				const traffic = d3.csvParse( await fetch( '/gallery/areas/ridgeline-plot/files/traffic.csv' ).then( r => r.text() ), d3.autoType );
 
 				// Prepare the series (verbatim).

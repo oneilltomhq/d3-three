@@ -42,7 +42,7 @@ SwiftShader adapter, which is what keeps the frames reproducible.
 ```bash
 npm ci
 export THREE_DIR=/path/to/three.js
-export GALLERY_DIR=/path/to/d3-gallery/notebooks
+export GALLERY_DIR=/path/to/d3-gallery/notebooks   # globe and ridgeline only
 ```
 
 - **`THREE_DIR`** is a three.js tree containing `build/three.webgpu.js`,
@@ -51,28 +51,29 @@ export GALLERY_DIR=/path/to/d3-gallery/notebooks
   the unpacked npm package (`npm pack three@0.186.1`). The committed
   screenshots pass at 0.0% against both three@0.186.1 and the dev branch at
   `5f610f5`.
-- **`GALLERY_DIR`** holds the gallery notebooks' file attachments, laid out
-  as `<section>/<slug>/files/<name>`. The pages fetch these paths:
+- **`GALLERY_DIR`** is needed only by the globe and ridgeline pages, their
+  e2e runs and `tools/ref.js`. The data the other sixteen pages read is
+  committed in `examples/data/` and fetched relative to the page. Two
+  gallery files are left out until their licences are checked, and those
+  two pages fetch them from `/gallery/`:
 
 ```
-hierarchies/{cluster.v2,tree.v2,treemap.v2}/files/flare.json
-hierarchies/{pack.v2,sunburst.v2,force-directed-tree}/files/flare-2.json
-networks/hierarchical-edge-bundling.v2/files/flare.json
-networks/force-directed-graph.v2/files/miserables.json
-networks/disjoint-force-directed-graph.v2/files/graph.json
-networks/sankey.v2/files/energy.csv
-dots/splom.v2/files/penguins.csv
-dots/spike-map.v2/files/{counties-albers-10m.json,population.json}
-bars/grouped-bar-chart.v2/files/us-population-state-age.csv
-radial/radial-stacked-bar-chart.v3/files/data-2.csv
-areas/ridgeline-plot/files/traffic.csv
-maps/world-choropleth.v2/files/{countries-50m.json,hale.csv}
+maps/world-choropleth.v2/files/hale.csv       (d3_globe)
+areas/ridgeline-plot/files/traffic.csv        (d3_ridgeline)
 ```
 
-  Each directory corresponds to a notebook such as `@d3/cluster/2`. Observable's
-  export API (`https://api.observablehq.com/@d3/cluster/2.js?v=4`) lists each
-  attachment's download URL. The tree of life's Newick file is committed at
-  `examples/data/life.txt`, and the chord diagram's data is inline.
+  `GALLERY_DIR` is laid out as `<section>/<slug>/files/<name>`, one directory
+  per notebook such as `@d3/cluster/2`. Observable's export API
+  (`https://api.observablehq.com/@d3/cluster/2.js?v=4`) lists each
+  attachment's download URL. Without it, `npm run e2e` still grades the
+  other sixteen pages and fails those two.
+
+The files in `examples/data/` are the notebooks' attachments, unchanged. They
+keep their notebook names except where two notebooks share a name:
+`flare-imports.json` is the edge-bundling notebook's `flare.json`, and the
+treemap notebook's `flare.json` is byte-identical to `flare-2.json`, so the
+treemap reads that. `examples/jsm/vendor/THIRD-PARTY-NOTICES.md` lists where
+each one came from. The chord diagram's data is inline in its page.
 
 ## Running
 
@@ -82,7 +83,7 @@ npm run e2e          # grade every page; e2e d3_tree grades one
 npm run e2e:make     # rewrite examples/screenshots/ from the current render
 npm run e2e:twice    # render each page twice and require 0 differing pixels
 npm run determinism  # check the injected Math.random, clocks and RAF
-npm test             # layout invariants for src/pack3.js (needs GALLERY_DIR)
+npm test             # layout invariants for src/pack3.js
 ```
 
 The server mounts this repo at `/`, `$THREE_DIR/build` at `/build/`,
@@ -167,6 +168,8 @@ licences:
 - `test/e2e/image.js`, `deterministic-injection.js` and `clean-page.js` were
   copied from three.js (MIT), and `puppeteer.js` and `server.js` were adapted
   from it.
+- `examples/data/` holds the notebooks' data attachments, credited to their
+  sources in `THIRD-PARTY-NOTICES.md`.
 - The pages port code from the D3 gallery notebooks (ISC, Copyright
   Observable, Inc.; @d3/tree-of-life is Copyright Mike Bostock), and
   `parseNewick` in `examples/d3_tree-of-life.html` is Jason Davies's

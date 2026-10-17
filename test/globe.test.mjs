@@ -10,15 +10,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import * as THREE from 'three';
 import * as d3 from 'd3';
 import * as topojson from '../examples/jsm/vendor/topojson-client.js';
 import { featureGeometry, triangulatePolygon, refineTriangles, unwrapRing, interiorPoint, lonLatToVector3, lineSegmentsGeometry } from '../src/globe.js';
 
-const GALLERY_DIR = path.resolve( process.env.GALLERY_DIR || path.join( os.homedir(), 'src/vendor/d3-gallery/notebooks' ) );
-const world = JSON.parse( readFileSync( path.join( GALLERY_DIR, 'maps/world-choropleth.v2/files/countries-50m.json' ), 'utf8' ) );
+const world = JSON.parse( readFileSync( new URL( '../examples/data/countries-50m.json', import.meta.url ), 'utf8' ) );
 const countries = topojson.feature( world, world.objects.countries );
 const R = 10;
 const MAX_DEG = 2;
